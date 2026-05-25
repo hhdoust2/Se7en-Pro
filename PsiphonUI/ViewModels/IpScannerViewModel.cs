@@ -26,8 +26,9 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
 
     private CancellationTokenSource? _runCts;
 
-    private readonly ConcurrentQueue<(IpRow Row, IpHealthResult Result)> _resultQueue = new();
+    private readonly ConcurrentQueue<(int ScanId, IpRow Row, IpHealthResult Result)> _resultQueue = new();
     private int _flushScheduled;
+    private int _scanGenerationId;
     private const int FlushIntervalMs = 80;
 
     private readonly ManualResetEventSlim _pauseGate = new(initialState: true);
@@ -110,6 +111,90 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
 
     [ObservableProperty] private string _customInput = "";
 
+    [ObservableProperty] private long _targetCount = 5000;
+    [ObservableProperty] private bool _isGenerating;
+    [ObservableProperty] private bool _isSettingsOpen;
+
+    /// <summary>
+    /// Number of IPs scanned per chunk when the queue is large enough to
+    /// trigger automatic chunking (Generate / Max with > 1M IPs). The
+    /// scanner loads this many IPs into Candidates at a time, scans
+    /// them, drops them, then moves on to the next chunk. Memory stays
+    /// bounded regardless of how big the underlying set is — e.g. a full
+    /// /8 (16,777,216 IPs) is processed in 17 chunks.
+    /// </summary>
+    private const int ChunkSize = 1_000_000;
+
+    /// <summary>
+    /// Maximum number of IPs the scanner will accept in a single Generate
+    /// pass. The previous 5M cap was lifted to allow scanning a full /8
+    /// (16M); generations larger than <see cref="ChunkSize"/> are
+    /// automatically processed in chunks at scan time.
+    /// </summary>
+    private const long GenerateAbsoluteCap = 100_000_000L;
+
+    private IpRangeParser.StreamSource? _streamSource;
+
+    [ObservableProperty] private long _streamingTotalIps;
+    partial void OnStreamingTotalIpsChanged(long value) => OnPropertyChanged(nameof(IsStreamingMode));
+
+    [ObservableProperty] private int _streamingChunkIndex;
+    [ObservableProperty] private int _streamingChunkCount;
+    [ObservableProperty] private long _overallScannedCount;
+
+    public bool IsStreamingMode => _streamSource != null && StreamingTotalIps > 0;
+
+    /// <summary>
+    /// True while a user-imported .txt file is the source of the current
+    /// candidate queue.  While this is on, the CDN ranges section in the
+    /// settings dialog and the Generate button are disabled so the
+    /// loaded list cannot be silently overwritten from picked ranges.
+    /// Cleared by ClearCustomInput / ClearCommand.
+    /// </summary>
+    [ObservableProperty] private bool _isCustomListLoaded;
+    partial void OnIsCustomListLoadedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanGenerateFromRanges));
+        OnPropertyChanged(nameof(CanUseRanges));
+    }
+
+    partial void OnIsGeneratingChanged(bool value)
+        => OnPropertyChanged(nameof(CanGenerateFromRanges));
+
+    /// <summary>
+    /// True iff the user can press Generate (no in-flight generation and
+    /// no file-loaded list pinning the candidate queue).
+    /// </summary>
+    public bool CanGenerateFromRanges => !IsGenerating && !IsCustomListLoaded;
+
+    /// <summary>
+    /// True iff the CDN-ranges UI (preset, filter, list, select all/clear)
+    /// is interactive.  Disabled while a .txt file backs the queue.
+    /// </summary>
+    public bool CanUseRanges => !IsCustomListLoaded;
+
+    public long SelectedRangeIpTotal
+    {
+        get
+        {
+            var cidrs = AvailableRanges.Where(r => r.IsSelected).Select(r => r.Cidr);
+            IpRangeParser.ParseSegments(cidrs, out var total);
+            return total > long.MaxValue ? long.MaxValue : (long)total;
+        }
+    }
+
+    public string SelectedRangeIpTotalDisplay
+    {
+        get
+        {
+            var t = SelectedRangeIpTotal;
+            if (t <= 0) return "no ranges ticked";
+            return $"{t:N0} IPs in {AvailableRanges.Count(r => r.IsSelected)} ticked range(s)";
+        }
+    }
+
+    public long TargetCountSafeCap => GenerateAbsoluteCap;
+
     public ObservableCollection<RangeRow> AvailableRanges { get; }
 
     [ObservableProperty] private string _rangesFilter = "";
@@ -146,6 +231,8 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
             });
         }
         OnPropertyChanged(nameof(AvailableRangesSummary));
+        OnPropertyChanged(nameof(SelectedRangeIpTotal));
+        OnPropertyChanged(nameof(SelectedRangeIpTotalDisplay));
     }
 
     private void RefreshAvailableSnis(IpScannerPresets.Preset preset)
@@ -193,7 +280,38 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
     }
 
     internal void NotifyRangeSelectionChanged()
-    => OnPropertyChanged(nameof(AvailableRangesSummary));
+    {
+        OnPropertyChanged(nameof(AvailableRangesSummary));
+        OnPropertyChanged(nameof(SelectedRangeIpTotal));
+        OnPropertyChanged(nameof(SelectedRangeIpTotalDisplay));
+    }
+
+    [RelayCommand]
+    private void OpenSettings() => IsSettingsOpen = true;
+
+    [RelayCommand]
+    private void CloseSettings() => IsSettingsOpen = false;
+
+    [RelayCommand]
+    private async Task SaveSettingsAsync()
+    {
+        var hasText = !string.IsNullOrWhiteSpace(CustomInput);
+        var hasRanges = AvailableRanges.Any(r => r.IsSelected);
+        var shouldQueue = !IsRunning && !IsGenerating && (hasText || hasRanges);
+
+        if (shouldQueue)
+        {
+            await ImportSelectedRangesAsync(null).ConfigureAwait(true);
+            if (!IsSettingsOpen) return;
+        }
+
+        var method = SelectedCheckMethod ?? "Ping";
+        var timeout = Math.Clamp(TimeoutMs, 500, 30_000);
+        var conc = Math.Clamp(Concurrency, 1, 200);
+        var ticked = AvailableRanges.Count(r => r.IsSelected);
+        StatusText = $"Settings saved · {method} · {timeout} ms · concurrency {conc} · {ticked:N0} range(s) ticked.";
+        IsSettingsOpen = false;
+    }
 
     internal void NotifySniSelectionChanged(SniRow changed)
     {
@@ -222,8 +340,26 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
     partial void OnIsPausedChanged(bool value) => OnPropertyChanged(nameof(IsRunningAndNotPaused));
 
     [RelayCommand]
-    private async Task ImportSelectedRangesAsync()
+    private async Task ImportSelectedRangesAsync(object? parameter)
     {
+        if (IsGenerating) return;
+        if (IsCustomListLoaded)
+        {
+            StatusText = "A file-loaded IP list is in use. Press Clear to re-enable ranges.";
+            return;
+        }
+        if (parameter is not null)
+        {
+            var s = parameter.ToString();
+            if (!string.IsNullOrWhiteSpace(s))
+            {
+                var cleaned = s.Replace(",", "").Replace("_", "").Trim();
+                if (long.TryParse(cleaned, out var override_))
+                {
+                    TargetCount = override_;
+                }
+            }
+        }
         var picked = AvailableRanges.Where(r => r.IsSelected).Select(r => r.Cidr).ToList();
         var hasTextInput = !string.IsNullOrWhiteSpace(CustomInput);
         if (picked.Count == 0 && !hasTextInput)
@@ -232,35 +368,135 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
             return;
         }
 
-        var sb = new StringBuilder();
-        foreach (var p in picked) { sb.Append(p); sb.Append('\n'); }
-        if (hasTextInput) sb.Append(CustomInput);
-        var combined = sb.ToString();
+        var cap = TargetCountSafeCap;
+        var target = TargetCount <= 0 ? cap : Math.Min(TargetCount, cap);
 
-        StatusText = "Expanding ranges...";
-        var r = await Task.Run(() => IpRangeParser.ExpandWithDiagnostics(combined)).ConfigureAwait(true);
-        if (r.Ips.Count == 0)
+        IsGenerating = true;
+        StatusText = "Generating IPs…";
+
+        try
         {
-            StatusText = "Nothing valid to scan. " + DiagnosticSuffix(r);
-            return;
+            var streamInputBuilder = new StringBuilder();
+            foreach (var cidr in picked)
+            {
+                streamInputBuilder.Append(cidr);
+                streamInputBuilder.Append('\n');
+            }
+            if (hasTextInput)
+            {
+                streamInputBuilder.Append(CustomInput);
+            }
+            var src = await Task.Run(() => IpRangeParser.BuildStream(streamInputBuilder.ToString())).ConfigureAwait(true);
+
+            if (src.TotalHosts == 0)
+            {
+                var warn = src.Warnings.Count > 0
+                    ? $" Warnings: {string.Join(" | ", src.Warnings.Take(3))}"
+                    : string.Empty;
+                StatusText = $"Nothing valid to scan.{warn}";
+                return;
+            }
+
+            var effective = TargetCount <= 0
+                ? src.TotalHosts
+                : Math.Min((ulong)Math.Min(target, GenerateAbsoluteCap), src.TotalHosts);
+
+            var warnSuffix = src.Warnings.Count > 0
+                ? $" · {src.Warnings.Count} warning(s)"
+                : string.Empty;
+
+            Interlocked.Increment(ref _scanGenerationId);
+            while (_resultQueue.TryDequeue(out _)) { }
+
+            if (effective <= (ulong)ChunkSize)
+            {
+                var smallTarget = (long)effective;
+                var sampled = picked.Count > 0
+                    ? await Task.Run(() => IpRangeParser.GenerateFromCidrs(
+                        picked, smallTarget, smallTarget)).ConfigureAwait(true)
+                    : new IpRangeParser.SamplingResult(Array.Empty<string>(), 0, Truncated: false);
+
+                IReadOnlyList<string> textIps = Array.Empty<string>();
+                IpRangeParser.ExpansionResult? textResult = null;
+                if (hasTextInput)
+                {
+                    textResult = await Task.Run(() =>
+                        IpRangeParser.ExpandWithDiagnostics(CustomInput)).ConfigureAwait(true);
+                    textIps = textResult.Ips;
+                }
+
+                var rows = await Task.Run(() =>
+                {
+                    var totalCount = sampled.Ips.Count + textIps.Count;
+                    var list = new List<IpRow>(totalCount);
+                    var seen = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (var ip in sampled.Ips)
+                        if (seen.Add(ip)) list.Add(new IpRow { Ip = ip, Status = IpRowStatus.Pending });
+                    foreach (var ip in textIps)
+                        if (seen.Add(ip)) list.Add(new IpRow { Ip = ip, Status = IpRowStatus.Pending });
+                    return list;
+                }).ConfigureAwait(true);
+
+                Healthy.ResetWith(System.Array.Empty<IpRow>());
+                ResetCounters();
+                Candidates.ResetWith(rows);
+                TotalCount = Candidates.Count;
+                ResetStreamingMode();
+
+                var sb = new StringBuilder();
+                sb.Append($"Queued {rows.Count:N0} IPs");
+                if (picked.Count > 0) sb.Append($" from {picked.Count} range(s) (pool: {sampled.TotalAvailable:N0})");
+                if (textIps.Count > 0) sb.Append($" + {textIps.Count:N0} from text");
+                sb.Append(". Press Start to scan.");
+                if (textResult is not null) sb.Append(' ').Append(DiagnosticSuffix(textResult));
+                StatusText = sb.ToString().TrimEnd();
+            }
+            else
+            {
+                var chunkCount = (int)Math.Min((ulong)int.MaxValue, (effective + (ulong)ChunkSize - 1) / (ulong)ChunkSize);
+                var previewSize = (int)Math.Min(effective, (ulong)ChunkSize);
+
+                var previewRows = await Task.Run(() =>
+                {
+                    var list = new List<IpRow>(previewSize);
+                    using var enumerator = src.Enumerate(CancellationToken.None).GetEnumerator();
+                    for (int i = 0; i < previewSize; i++)
+                    {
+                        if (!enumerator.MoveNext()) break;
+                        list.Add(new IpRow { Ip = enumerator.Current, Status = IpRowStatus.Pending });
+                    }
+                    return list;
+                }).ConfigureAwait(true);
+
+                _streamSource = src;
+                StreamingTotalIps = (long)Math.Min(effective, (ulong)long.MaxValue);
+                StreamingChunkCount = chunkCount;
+                StreamingChunkIndex = 0;
+                OverallScannedCount = 0;
+
+                Healthy.Clear();
+                ResetCounters();
+                Candidates.ResetWith(previewRows);
+                TotalCount = (int)Math.Min(effective, (ulong)int.MaxValue);
+                StatusText = chunkCount > 1
+                    ? $"Queued {effective:N0} IPs across {chunkCount:N0} chunk(s) of {ChunkSize:N0}. Showing first {previewRows.Count:N0} in queue · press Start to scan.{warnSuffix}"
+                    : $"Queued {effective:N0} IPs. Press Start to scan.{warnSuffix}";
+            }
+
+            IsSettingsOpen = false;
         }
-
-        var rows = await Task.Run(() =>
+        catch (OperationCanceledException)
         {
-            var list = new List<IpRow>(r.Ips.Count);
-            foreach (var ip in r.Ips) list.Add(new IpRow { Ip = ip, Status = IpRowStatus.Pending });
-            return list;
-        }).ConfigureAwait(true);
-
-        if (r.Ips.Count <= LargeListThreshold)
-        {
-            CustomInput = string.Join('\n', r.Ips);
+            StatusText = "Generation cancelled.";
         }
-        Healthy.ResetWith(System.Array.Empty<IpRow>());
-        ResetCounters();
-        Candidates.ResetWith(rows);
-        TotalCount = Candidates.Count;
-        StatusText = $"Generated {Candidates.Count:N0} IPs from {picked.Count} range(s) + textbox. Press Start to scan. {DiagnosticSuffix(r)}".TrimEnd();
+        catch (Exception ex)
+        {
+            StatusText = $"Generate failed: {ex.Message}";
+        }
+        finally
+        {
+            IsGenerating = false;
+        }
     }
 
     [RelayCommand]
@@ -271,7 +507,25 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
         Healthy.Clear();
         ResetCounters();
         TotalCount = 0;
+        IsCustomListLoaded = false;
+        ResetStreamingMode();
         StatusText = "Cleared. Tick ranges and press Generate, or paste IPs and press Start.";
+    }
+
+    /// <summary>
+    /// Drops the parked streaming source so the next Start uses the
+    /// in-memory Candidates path. Called from every command that
+    /// rebuilds the candidate set (Generate, Import file, Apply
+    /// scanner-found IPs, Clear, etc.) so users never accidentally
+    /// scan a stale stream alongside fresh Candidates.
+    /// </summary>
+    private void ResetStreamingMode()
+    {
+        _streamSource = null;
+        StreamingTotalIps = 0;
+        StreamingChunkIndex = 0;
+        StreamingChunkCount = 0;
+        OverallScannedCount = 0;
     }
 
     private const int LargeListThreshold = 5000;
@@ -295,12 +549,19 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
             return list;
         }).ConfigureAwait(true);
 
+        Interlocked.Increment(ref _scanGenerationId);
+        while (_resultQueue.TryDequeue(out _)) { }
+
         Healthy.ResetWith(System.Array.Empty<IpRow>());
         ResetCounters();
         Candidates.ResetWith(rows);
         TotalCount = Candidates.Count;
+        ResetStreamingMode();
         StatusText = $"Generated {TotalCount:N0} IPs. Press Start to scan. {DiagnosticSuffix(r)}".TrimEnd();
     }
+
+    [RelayCommand]
+    private async Task LoadFromTextFileAsync() => await LoadFromFileAsync().ConfigureAwait(true);
 
     private static string DiagnosticSuffix(IpRangeParser.ExpansionResult r)
     {
@@ -330,27 +591,25 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
         try
         {
             var text = await File.ReadAllTextAsync(dialog.FileName).ConfigureAwait(true);
-            StatusText = $"Loaded {text.Length:N0} chars. Expanding...";
-            var r = await Task.Run(() => IpRangeParser.ExpandWithDiagnostics(text)).ConfigureAwait(true);
-            if (r.Ips.Count == 0)
+            StatusText = $"Loaded {text.Length:N0} chars. Counting...";
+
+            var src = await Task.Run(() => IpRangeParser.BuildStream(text)).ConfigureAwait(true);
+
+            CustomInput = text;
+
+            if (src.TotalHosts == 0)
             {
-                StatusText = "No valid IPs / ranges in file. " + DiagnosticSuffix(r);
+                var warn = src.Warnings.Count > 0
+                    ? $" Warnings: {string.Join(" | ", src.Warnings.Take(3))}"
+                    : string.Empty;
+                StatusText = $"Loaded {Path.GetFileName(dialog.FileName)} into the IP-input box, but no parseable IPs / ranges found.{warn}";
                 return;
             }
 
-            var rows = await Task.Run(() =>
-            {
-                var list = new List<IpRow>(r.Ips.Count);
-                foreach (var ip in r.Ips) list.Add(new IpRow { Ip = ip, Status = IpRowStatus.Pending });
-                return list;
-            }).ConfigureAwait(true);
-
-            CustomInput = r.Ips.Count <= LargeListThreshold ? string.Join('\n', r.Ips) : text;
-            Healthy.ResetWith(System.Array.Empty<IpRow>());
-            ResetCounters();
-            Candidates.ResetWith(rows);
-            TotalCount = Candidates.Count;
-            StatusText = $"Loaded {TotalCount:N0} IPs from {Path.GetFileName(dialog.FileName)}. Press Start to scan. {DiagnosticSuffix(r)}".TrimEnd();
+            var warnSuffix = src.Warnings.Count > 0
+                ? $" · {src.Warnings.Count} warning(s)"
+                : string.Empty;
+            StatusText = $"Loaded {Path.GetFileName(dialog.FileName)} into the IP-input box ({src.TotalHosts:N0} IPs). Edit if you like, then press Save to queue or Scan All for chunked scan.{warnSuffix}";
         }
         catch (Exception ex)
         {
@@ -358,16 +617,169 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
         }
     }
 
+    /// <summary>
+    /// Chunked scan loop. Activated automatically by <c>StartAsync</c>
+    /// when a parked stream source is present (the Generate path put it
+    /// there because the requested queue size exceeded <see cref="ChunkSize"/>).
+    /// Pulls up to <see cref="ChunkSize"/> IPs from the source enumerator,
+    /// loads them into Candidates, runs the standard concurrent probe,
+    /// accumulates healthy hits, then drops the chunk and repeats until
+    /// either <see cref="StreamingTotalIps"/> IPs have been scanned, the
+    /// enumerator is exhausted, or the user cancels.
+    /// Healthy results survive across chunks; failed entries are
+    /// discarded each chunk so memory stays bounded.
+    /// </summary>
+    private async Task RunStreamingScanAsync(IpRangeParser.StreamSource source)
+    {
+        var myScanId = Interlocked.Increment(ref _scanGenerationId);
+        while (_resultQueue.TryDequeue(out _)) { }
+        Interlocked.Exchange(ref _flushScheduled, 0);
+
+        IsRunning = true;
+        IsPaused = false;
+        _pauseGate.Set();
+        Healthy.Clear();
+        ResetCounters();
+        StreamingChunkIndex = 0;
+        OverallScannedCount = 0;
+
+        var method = SelectedCheckMethod switch
+        {
+            "TLS + SNI" => IpHealthCheckMethod.TlsSni,
+            _ => IpHealthCheckMethod.Ping,
+        };
+        var timeout = TimeSpan.FromMilliseconds(Math.Clamp(TimeoutMs, 500, 30_000));
+        var conc = Math.Clamp(Concurrency, 1, 200);
+        var sni = (SniHost ?? "").Trim();
+        long remaining = StreamingTotalIps > 0
+            ? StreamingTotalIps
+            : (long)Math.Min(source.TotalHosts, (ulong)long.MaxValue);
+        long total = remaining;
+
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+        var sem = new SemaphoreSlim(conc, conc);
+        var dispatcher = Application.Current?.Dispatcher;
+
+        try
+        {
+            using var enumerator = source.Enumerate(ct).GetEnumerator();
+            while (!ct.IsCancellationRequested && remaining > 0)
+            {
+                var thisChunkSize = (int)Math.Min(remaining, ChunkSize);
+                var chunk = await Task.Run(() =>
+                {
+                    var list = new List<IpRow>(thisChunkSize);
+                    for (int i = 0; i < thisChunkSize; i++)
+                    {
+                        if (ct.IsCancellationRequested) break;
+                        if (!enumerator.MoveNext()) break;
+                        list.Add(new IpRow { Ip = enumerator.Current, Status = IpRowStatus.Pending });
+                    }
+                    return list;
+                }, ct).ConfigureAwait(false);
+
+                if (chunk.Count == 0) break;
+
+                var chunkIdx = ++StreamingChunkIndex;
+                await UiInvokeAsync(dispatcher, () =>
+                {
+                    Candidates.ResetWith(chunk);
+                    TotalCount = chunk.Count;
+                    ScannedCount = 0;
+                    FailedCount = 0;
+                    StatusText = $"Chunk {chunkIdx}/{StreamingChunkCount} · scanning {chunk.Count:N0} IPs · {OverallScannedCount:N0}/{total:N0} overall · {HealthyCount} healthy";
+                }).ConfigureAwait(false);
+
+                var tasks = new List<Task>(chunk.Count);
+                foreach (var row in chunk)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    await WaitWhilePausedAsync(ct).ConfigureAwait(false);
+                    if (ct.IsCancellationRequested) break;
+
+                    await sem.WaitAsync(ct).ConfigureAwait(false);
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var result = await _healthChecker.CheckAsync(row.Ip, method, timeout, sni, ct).ConfigureAwait(false);
+                            _resultQueue.Enqueue((myScanId, row, result));
+                            ScheduleResultFlush(dispatcher);
+                        }
+                        finally
+                        {
+                            sem.Release();
+                        }
+                    }, ct));
+                }
+
+                try { await Task.WhenAll(tasks).ConfigureAwait(false); }
+                catch (OperationCanceledException) { /* propagate via outer ct check */ }
+
+                await UiInvokeAsync(dispatcher, () =>
+                {
+                    FlushResultQueue();
+                    OverallScannedCount += chunk.Count;
+                    var failedOverall = Math.Max(0, OverallScannedCount - HealthyCount);
+                    StatusText = $"Chunk {chunkIdx}/{StreamingChunkCount} done · {OverallScannedCount:N0}/{total:N0} overall · {HealthyCount} healthy / {failedOverall:N0} failed";
+                }).ConfigureAwait(false);
+
+                remaining -= chunk.Count;
+                if (ct.IsCancellationRequested) break;
+            }
+
+            await UiInvokeAsync(dispatcher, () =>
+            {
+                FlushResultQueue();
+                StatusText = ct.IsCancellationRequested
+                    ? $"Stopped at chunk {StreamingChunkIndex}/{StreamingChunkCount} · {OverallScannedCount:N0}/{total:N0} ({HealthyCount} healthy)"
+                    : $"Done. Streaming scan complete · {OverallScannedCount:N0} IPs · {HealthyCount} healthy";
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await UiInvokeAsync(dispatcher, () =>
+            {
+                FlushResultQueue();
+                StatusText = $"Stopped at chunk {StreamingChunkIndex}/{StreamingChunkCount} · {OverallScannedCount:N0}/{total:N0} ({HealthyCount} healthy)";
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            await UiInvokeAsync(dispatcher, () =>
+            {
+                IsRunning = false;
+                IsPaused = false;
+            }).ConfigureAwait(false);
+            _pauseGate.Set();
+            _runCts?.Dispose();
+            _runCts = null;
+        }
+    }
+
     [RelayCommand]
     private async Task StartAsync()
     {
         if (IsRunning) return;
+
+        if (_streamSource != null && _streamSource.TotalHosts > 0)
+        {
+            await RunStreamingScanAsync(_streamSource).ConfigureAwait(true);
+            return;
+        }
+
         if (Candidates.Count == 0) await GenerateIpsAsync().ConfigureAwait(true);
         if (Candidates.Count == 0)
         {
             StatusText = "Nothing to scan. Import a preset range or paste IPs first.";
             return;
         }
+
+        var myScanId = Interlocked.Increment(ref _scanGenerationId);
+
+        while (_resultQueue.TryDequeue(out _)) { }
+        Interlocked.Exchange(ref _flushScheduled, 0);
 
         IsRunning = true;
         IsPaused = false;
@@ -417,7 +829,7 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
                     try
                     {
                         var result = await _healthChecker.CheckAsync(row.Ip, method, timeout, sni, ct).ConfigureAwait(false);
-                        _resultQueue.Enqueue((row, result));
+                        _resultQueue.Enqueue((myScanId, row, result));
                         ScheduleResultFlush(dispatcher);
                     }
                     finally
@@ -427,25 +839,45 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
                 }, ct));
             }
 
-            await Task.WhenAll(tasks).ConfigureAwait(true);
+            await Task.WhenAll(tasks).ConfigureAwait(false);
 
-            FlushResultQueue();
-            StatusText = ct.IsCancellationRequested
-                ? $"Stopped at {ScannedCount}/{TotalCount} — {HealthyCount} healthy."
-                : $"Done. {HealthyCount} healthy / {FailedCount} failed.";
+            await UiInvokeAsync(dispatcher, () =>
+            {
+                FlushResultQueue();
+                StatusText = ct.IsCancellationRequested
+                    ? $"Stopped at {ScannedCount}/{TotalCount} — {HealthyCount} healthy."
+                    : $"Done. {HealthyCount} healthy / {FailedCount} failed.";
+            }).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            StatusText = $"Stopped at {ScannedCount}/{TotalCount} — {HealthyCount} healthy.";
+            await UiInvokeAsync(dispatcher, () =>
+            {
+                FlushResultQueue();
+                StatusText = $"Stopped at {ScannedCount}/{TotalCount} — {HealthyCount} healthy.";
+            }).ConfigureAwait(false);
         }
         finally
         {
-            IsRunning = false;
-            IsPaused = false;
+            await UiInvokeAsync(dispatcher, () =>
+            {
+                IsRunning = false;
+                IsPaused = false;
+            }).ConfigureAwait(false);
             _pauseGate.Set();
             _runCts?.Dispose();
             _runCts = null;
         }
+    }
+
+    private static Task UiInvokeAsync(System.Windows.Threading.Dispatcher? dispatcher, Action action)
+    {
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+        return dispatcher.InvokeAsync(action).Task;
     }
 
     private async Task WaitWhilePausedAsync(CancellationToken ct)
@@ -515,11 +947,15 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
         {
             if (_resultQueue.IsEmpty) return;
 
+            var currentScanId = Volatile.Read(ref _scanGenerationId);
             var newlyHealthy = new List<IpRow>(capacity: 16);
             var newlyFailed = 0;
 
             while (_resultQueue.TryDequeue(out var item))
             {
+
+                if (item.ScanId != currentScanId) continue;
+
                 var row = item.Row;
                 var result = item.Result;
                 row.LatencyMs = result.LatencyMs;
@@ -594,6 +1030,8 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
         Candidates.Clear();
         Healthy.Clear();
         ResetCounters();
+        IsCustomListLoaded = false;
+        ResetStreamingMode();
         StatusText = "Cleared.";
     }
 
@@ -661,25 +1099,78 @@ public sealed partial class IpScannerViewModel : PageViewModelBase
             return;
         }
 
-        var top = Healthy.Take(CdnFrontingBuilder.MaxCustomCdnFrontingIpAddresses).Select(r => r.Ip).ToList();
-        var text = string.Join('\n', top);
-
+        var scanned = Healthy.Select(r => r.Ip);
         var settingsVm = _serviceProvider.GetService(typeof(SettingsViewModel)) as SettingsViewModel;
+
+        var existing = settingsVm is not null
+            ? settingsVm.CdnFrontingCustomIpList
+            : _settingsService.Settings.CdnFrontingCustomIpList;
+
+        var (mergedText, addedCount, totalCount) = MergeCdnIpList(existing, scanned);
+
         if (settingsVm is not null)
         {
             settingsVm.SelectedProtocolMode = "cdn_fronting";
-            settingsVm.CdnFrontingCustomIpList = text;
+            settingsVm.CdnFrontingCustomIpList = mergedText;
         }
         else
         {
-
-            _settingsService.Settings.CdnFrontingCustomIpList = text;
+            _settingsService.Settings.CdnFrontingCustomIpList = mergedText;
             _settingsService.Settings.ProtocolMode = "cdn_fronting";
             _settingsService.Save();
         }
 
-        StatusText = $"Applied {top.Count} healthy IPs → opening Settings → CDN Fronting…";
+        StatusText = addedCount > 0
+            ? $"Added {addedCount} new IPs (total {totalCount}) → opening Settings → CDN Fronting…"
+            : $"All scanned IPs are already in the list (total {totalCount}) → opening Settings → CDN Fronting…";
         _navigationService.NavigateTo("settings");
+    }
+
+    /// <summary>
+    /// Merge newly scanned IPs into an existing newline-delimited CDN custom-IP
+    /// list. Newly scanned (just-verified) IPs are placed at the TOP so that
+    /// tunnel-core tries them first; previously stored IPs follow, de-duplicated
+    /// case-insensitively. The combined list is capped at
+    /// <see cref="CdnFrontingBuilder.MaxCustomCdnFrontingIpAddresses"/>.
+    /// </summary>
+    private static (string Text, int AddedCount, int TotalCount) MergeCdnIpList(
+        string? existingList, IEnumerable<string> scannedIps)
+    {
+        var max = CdnFrontingBuilder.MaxCustomCdnFrontingIpAddresses;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var merged = new List<string>();
+
+        var existingSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawLine in (existingList ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var ip = rawLine.Trim();
+            if (ip.Length > 0) existingSet.Add(ip);
+        }
+
+        var added = 0;
+        foreach (var raw in scannedIps)
+        {
+            var ip = (raw ?? "").Trim();
+            if (ip.Length == 0) continue;
+            if (!seen.Add(ip)) continue;
+            merged.Add(ip);
+            if (!existingSet.Contains(ip)) added++;
+            if (merged.Count >= max) break;
+        }
+
+        if (merged.Count < max)
+        {
+            foreach (var rawLine in (existingList ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var ip = rawLine.Trim();
+                if (ip.Length == 0) continue;
+                if (!seen.Add(ip)) continue;
+                merged.Add(ip);
+                if (merged.Count >= max) break;
+            }
+        }
+
+        return (string.Join('\n', merged), added, merged.Count);
     }
 
     [RelayCommand]

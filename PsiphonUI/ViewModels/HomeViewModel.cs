@@ -14,7 +14,7 @@ public sealed partial class HomeViewModel : PageViewModelBase
 {
     private readonly ITunnelCoreManager _tunnel;
     private readonly ISettingsService _settings;
-    private readonly IXrayTunManager _xray;
+    private readonly ITunManager _tun;
     private readonly DispatcherTimer _uptimeTimer;
     private DateTime? _connectedAt;
 
@@ -33,11 +33,11 @@ public sealed partial class HomeViewModel : PageViewModelBase
     public HomeViewModel(
         ITunnelCoreManager tunnel,
         ISettingsService settings,
-        IXrayTunManager xray)
+        ITunManager tun)
     {
         _tunnel = tunnel;
         _settings = settings;
-        _xray = xray;
+        _tun = tun;
 
         _tunModeEnabled = AdminElevation.IsAdministrator()
             && _settings.Settings.SystemWideTunneling;
@@ -48,6 +48,14 @@ public sealed partial class HomeViewModel : PageViewModelBase
 
         _tunnel.StateChanged += (_, s) => Application.Current.Dispatcher.Invoke(() => ApplyState(s));
         _tunnel.BytesTransferredChanged += (_, _) => Application.Current.Dispatcher.Invoke(ApplyBytes);
+        _tunnel.RouteChanged += (_, _) => Application.Current.Dispatcher.Invoke(() =>
+        {
+            OnPropertyChanged(nameof(CurrentRouteIp));
+            OnPropertyChanged(nameof(CurrentRouteSni));
+            OnPropertyChanged(nameof(HasCurrentRoute));
+            CopyCurrentIpCommand.NotifyCanExecuteChanged();
+            CopyCurrentSniCommand.NotifyCanExecuteChanged();
+        });
         _tunnel.NoticeReceived += (_, n) => Application.Current.Dispatcher.Invoke(() =>
         {
 
@@ -59,7 +67,7 @@ public sealed partial class HomeViewModel : PageViewModelBase
             }
         });
 
-        _xray.StateChanged += (_, _) => Application.Current.Dispatcher.Invoke(() =>
+        _tun.StateChanged += (_, _) => Application.Current.Dispatcher.Invoke(() =>
         {
             OnPropertyChanged(nameof(TunStatusText));
             OnPropertyChanged(nameof(TunStatusBrush));
@@ -168,12 +176,12 @@ public sealed partial class HomeViewModel : PageViewModelBase
             if (!IsAdminElevated)
                 return "Run PsiphonUI as Administrator to enable system-wide tunneling.";
 
-            return _xray.State switch
+            return _tun.State switch
             {
-                XrayTunState.Starting => "Starting TUN…",
-                XrayTunState.Running => "All traffic is routed through PsiphonUI.",
-                XrayTunState.Stopping => "Stopping TUN…",
-                XrayTunState.Error => _xray.LastError ?? "TUN failed to start.",
+                TunState.Starting => "Starting TUN…",
+                TunState.Running => "All traffic is routed through PsiphonUI.",
+                TunState.Stopping => "Stopping TUN…",
+                TunState.Error => _tun.LastError ?? "TUN failed to start.",
                 _ => TunModeEnabled
                     ? "Will start automatically when PsiphonUI connects."
                     : "Only apps that honor the system proxy will use PsiphonUI.",
@@ -193,11 +201,11 @@ public sealed partial class HomeViewModel : PageViewModelBase
         return b;
     }
 
-    public Brush TunStatusBrush => _xray.State switch
+    public Brush TunStatusBrush => _tun.State switch
     {
-        XrayTunState.Running => TunBrushRunning,
-        XrayTunState.Starting or XrayTunState.Stopping => TunBrushTransition,
-        XrayTunState.Error => TunBrushError,
+        TunState.Running => TunBrushRunning,
+        TunState.Starting or TunState.Stopping => TunBrushTransition,
+        TunState.Error => TunBrushError,
         _ => TunBrushIdle,
     };
 
@@ -222,6 +230,15 @@ public sealed partial class HomeViewModel : PageViewModelBase
 
     public string SocksProxyEndpoint =>
         _tunnel.SocksProxyPort > 0 ? $"127.0.0.1:{_tunnel.SocksProxyPort}" : "—";
+
+    public string CurrentRouteIp =>
+        string.IsNullOrEmpty(_tunnel.CurrentRouteIp) ? "—" : _tunnel.CurrentRouteIp;
+
+    public string CurrentRouteSni =>
+        string.IsNullOrEmpty(_tunnel.CurrentRouteSni) ? "—" : _tunnel.CurrentRouteSni;
+
+    public bool HasCurrentRoute =>
+        !string.IsNullOrEmpty(_tunnel.CurrentRouteIp) || !string.IsNullOrEmpty(_tunnel.CurrentRouteSni);
 
     public string UptimeText
     {
@@ -274,6 +291,9 @@ public sealed partial class HomeViewModel : PageViewModelBase
         OnPropertyChanged(nameof(SocksProxyPort));
         OnPropertyChanged(nameof(HttpProxyEndpoint));
         OnPropertyChanged(nameof(SocksProxyEndpoint));
+        OnPropertyChanged(nameof(CurrentRouteIp));
+        OnPropertyChanged(nameof(CurrentRouteSni));
+        OnPropertyChanged(nameof(HasCurrentRoute));
         OnPropertyChanged(nameof(UptimeText));
         OnPropertyChanged(nameof(TotalDownText));
         OnPropertyChanged(nameof(TotalUpText));
@@ -351,6 +371,12 @@ public sealed partial class HomeViewModel : PageViewModelBase
 
     [RelayCommand]
     private void CopySocksProxy() => TryCopy(SocksProxyEndpoint);
+
+    [RelayCommand(CanExecute = nameof(HasCurrentRoute))]
+    private void CopyCurrentIp() => TryCopy(CurrentRouteIp);
+
+    [RelayCommand(CanExecute = nameof(HasCurrentRoute))]
+    private void CopyCurrentSni() => TryCopy(CurrentRouteSni);
 
     private static void TryCopy(string text)
     {

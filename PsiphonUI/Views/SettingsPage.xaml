@@ -157,11 +157,31 @@
                             BorderBrush="{DynamicResource Surface.SubtleBorder}"
                             BorderThickness="1"
                             Visibility="{Binding AllowLanConnections, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <TextBlock Text="{Binding LanProxyInfo}"
-                                   TextWrapping="Wrap"
-                                   FontFamily="Consolas, Cascadia Mono, monospace"
-                                   FontSize="12"
-                                   LineHeight="18" />
+                        <StackPanel>
+                            <TextBlock Text="{Binding LanProxyInfo}"
+                                       TextWrapping="Wrap"
+                                       FontFamily="Consolas, Cascadia Mono, monospace"
+                                       FontSize="12"
+                                       LineHeight="18" />
+                            <TextBlock Text="Authentication (optional):"
+                                       FontSize="11" FontWeight="SemiBold" Opacity="0.8"
+                                       Margin="0,10,0,4" />
+                            <Grid Margin="0,2,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="12" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         materialDesign:HintAssist.Hint="Username"
+                                         Text="{Binding LanProxyUsername, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBox Grid.Column="2"
+                                         materialDesign:HintAssist.Hint="Password"
+                                         Text="{Binding LanProxyPassword, UpdateSourceTrigger=PropertyChanged}" />
+                            </Grid>
+                            <TextBlock Text="If set, LAN clients must authenticate with these credentials."
+                                       FontSize="10" Opacity="0.6" Margin="0,4,0,0" />
+                        </StackPanel>
                     </Border>
                 </StackPanel>
             </Border>
@@ -373,6 +393,55 @@
 <TextBlock Style="{StaticResource UI.FieldLabel}"
                                Text="CDN FRONTING OVERRIDES"
                                Margin="0,0,0,8" />
+
+                    <Border Style="{StaticResource UI.ToggleTile}"
+                            IsEnabled="{Binding IsCdnFrontingMode}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0"
+                                    Width="34" Height="34" CornerRadius="9"
+                                    Background="{DynamicResource Surface.SubtleBg}"
+                                    BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                    BorderThickness="1"
+                                    VerticalAlignment="Center">
+                                <materialDesign:PackIcon Kind="Radar"
+                                                          Width="19" Height="19"
+                                                          Foreground="{StaticResource Brand.AccentBrush}"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="1"
+                                        Margin="12,0,12,0"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="Auto-find IP &amp; SNI"
+                                           FontSize="14" FontWeight="SemiBold" />
+                                <TextBlock Text="Scan the built-in list to find a working CDN route. When OFF, only the IPs/SNI below are used."
+                                           FontSize="12" Opacity="0.7"
+                                           Margin="0,3,0,0"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ToggleButton Grid.Column="2"
+                                          Style="{StaticResource MaterialDesignSwitchToggleButton}"
+                                          IsChecked="{Binding AutoFindIpAndSni, Mode=TwoWay}"
+                                          VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <StackPanel IsEnabled="{Binding CanUseAutoFind}">
+                        <CheckBox Content="Save found IPs &amp; SNIs into the fields below"
+                                  IsChecked="{Binding SaveFoundIpsAndSni, Mode=TwoWay}"
+                                  IsEnabled="{Binding AutoFindIpAndSni}"
+                                  Margin="4,12,0,0" />
+                        <TextBlock Style="{StaticResource UI.FieldHelper}"
+                                   Text="When ON and a CDN scan finds a working route, the IP and SNI are appended to your custom lists below in real-time so future connects skip the scan."
+                                   TextWrapping="Wrap"
+                                   Margin="24,2,0,12" />
+                    </StackPanel>
+
                     <Grid IsEnabled="{Binding IsCdnFrontingMode}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -396,12 +465,19 @@
 
                         <StackPanel Grid.Column="2">
                             <TextBlock Style="{StaticResource UI.FieldHelper}"
-                                       Text="SNI override"
+                                       Text="SNI overrides (one per line)"
                                        Margin="0,0,0,4" />
                             <TextBox Text="{Binding CdnFrontingCustomSni, UpdateSourceTrigger=LostFocus}"
-                                     materialDesign:HintAssist.Hint="e.g. pypi.org" />
+                                     AcceptsReturn="True"
+                                     TextWrapping="NoWrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Height="110"
+                                     FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
+                                     FontSize="12"
+                                     materialDesign:HintAssist.Hint="one per line, e.g. pypi.org" />
                             <TextBlock Style="{StaticResource UI.FieldHelper}"
-                                       Text="Tip: pick healthy IPs in the IP Scanner tab and tap Apply." />
+                                       Text="Tip: pick healthy IPs in the IP Scanner tab and tap Apply. Multiple SNIs rotate across your custom IPs."
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Grid>
                 </StackPanel>

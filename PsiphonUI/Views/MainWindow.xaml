@@ -9,11 +9,12 @@
         mc:Ignorable="d"
         Title="PsiphonUI"
         Icon="pack://application:,,,/Assets/app.ico"
-        Height="820" Width="1220"
+        Width="1100" Height="720"
+        MinWidth="900" MinHeight="600"
         SizeToContent="Manual"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
-        ResizeMode="CanMinimize"
+        ResizeMode="CanResize"
         AllowsTransparency="False"
         Background="{DynamicResource MaterialDesignPaper}"
         TextElement.Foreground="{DynamicResource MaterialDesignBody}"
@@ -26,10 +27,11 @@
 <WindowChrome.WindowChrome>
         <WindowChrome
             CaptionHeight="40"
-            ResizeBorderThickness="0"
+            ResizeBorderThickness="6"
             CornerRadius="0"
             GlassFrameThickness="0"
-            UseAeroCaptionButtons="False" />
+            UseAeroCaptionButtons="False"
+            NonClientFrameEdges="None" />
     </WindowChrome.WindowChrome>
 
     <Window.Resources>
@@ -50,7 +52,17 @@
         </DataTemplate>
     </Window.Resources>
 
-    <Border BorderThickness="1" BorderBrush="#33FFFFFF">
+    <Border BorderThickness="1" BorderBrush="#33FFFFFF" x:Name="RootChromeBorder">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Padding" Value="0" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                        <Setter Property="Padding" Value="7" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
         <DockPanel LastChildFill="True">
 
 <Grid DockPanel.Dock="Top" Height="40"
@@ -87,6 +99,22 @@
                             Command="{Binding MinimizeWindowCommand}">
                         <materialDesign:PackIcon Kind="WindowMinimize" Width="14" Height="14" />
                     </Button>
+                    <Button Style="{StaticResource UI.TitleBarButton}"
+                            ToolTip="Maximize / Restore"
+                            Command="{Binding MaximizeWindowCommand}">
+                        <materialDesign:PackIcon Width="14" Height="14">
+                            <materialDesign:PackIcon.Style>
+                                <Style TargetType="materialDesign:PackIcon">
+                                    <Setter Property="Kind" Value="WindowMaximize" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                                            <Setter Property="Kind" Value="WindowRestore" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </materialDesign:PackIcon.Style>
+                        </materialDesign:PackIcon>
+                    </Button>
                     <Button Style="{StaticResource UI.TitleBarCloseButton}"
                             ToolTip="Close"
                             Command="{Binding CloseWindowCommand}">
@@ -107,7 +135,7 @@
                     <DockPanel LastChildFill="True">
 
                         <Border DockPanel.Dock="Bottom" Padding="14,8" Opacity="0.55">
-                            <TextBlock Text="v1.0.0" FontSize="11" HorizontalAlignment="Center" />
+                            <TextBlock Text="v1.0.1" FontSize="11" HorizontalAlignment="Center" />
                         </Border>
 
 <Button DockPanel.Dock="Bottom"

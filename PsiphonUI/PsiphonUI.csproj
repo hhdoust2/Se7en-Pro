@@ -18,9 +18,9 @@
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
     <UseAppHost>true</UseAppHost>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
     <Product>PsiphonUI</Product>
     <Company>PsiphonUI</Company>
     <Description>PsiphonUI — modern Windows client (sample/open-source build)</Description>
@@ -45,23 +45,23 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="Resources\server_entries.txt" Condition="Exists('Resources\server_entries.txt')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
+    <EmbeddedResource Include="Resources\server_entries.bin" Condition="Exists('Resources\server_entries.bin')">
+      <LogicalName>PsiphonUI.Resources.server_entries.bin</LogicalName>
+    </EmbeddedResource>
 
-    <Content Include="Resources\xray\xray.exe" Condition="Exists('Resources\xray\xray.exe')">
+    <Content Include="Resources\sing-box\sing-box.exe" Condition="Exists('Resources\sing-box\sing-box.exe')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Resources\xray\wintun.dll" Condition="Exists('Resources\xray\wintun.dll')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\xray\geosite.dat" Condition="Exists('Resources\xray\geosite.dat')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Resources\xray\geoip.dat" Condition="Exists('Resources\xray\geoip.dat')">
+    <Content Include="Resources\sing-box\wintun.dll" Condition="Exists('Resources\sing-box\wintun.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
 
     <EmbeddedResource Include="Resources\akamai_seed_ips.txt" />
+    <EmbeddedResource Include="Resources\akamai_ip_ranges.txt" />
+    <EmbeddedResource Include="Resources\cloudflare_ip_ranges.txt" />
+    <EmbeddedResource Include="Resources\fastly_ip_ranges.txt" />
   </ItemGroup>
 
   <ItemGroup>

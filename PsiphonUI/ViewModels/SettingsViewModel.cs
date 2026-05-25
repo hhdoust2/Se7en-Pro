@@ -63,6 +63,8 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _minimizeToTray = s.MinimizeToTray;
         _selectedCloseAction = ResolveCloseAction(s.OnCloseAction);
         _allowLanConnections = s.AllowLanConnections;
+        _lanProxyUsername = s.LanProxyUsername;
+        _lanProxyPassword = s.LanProxyPassword;
 
         ParseUpstreamProxy(
             s.UpstreamProxy,
@@ -91,6 +93,8 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _beastMode = s.BeastMode;
         _cdnFrontingCustomIpList = s.CdnFrontingCustomIpList;
         _cdnFrontingCustomSni = s.CdnFrontingCustomSni;
+        _autoFindIpAndSni = s.AutoFindIpAndSni;
+        _saveFoundIpsAndSni = s.SaveFoundIpsAndSni;
 
         _settingsService.SettingsChanged += OnSettingsServiceChanged;
         _tunnel.StateChanged += OnTunnelStateChanged;
@@ -242,6 +246,22 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _ = _tunnel.RestartAsync();
     }
 
+    [ObservableProperty] private string _lanProxyUsername = "";
+    partial void OnLanProxyUsernameChanged(string value)
+    {
+        _settingsService.Settings.LanProxyUsername = (value ?? "").Trim();
+        _settingsService.Save();
+        _ = _tunnel.RestartAsync();
+    }
+
+    [ObservableProperty] private string _lanProxyPassword = "";
+    partial void OnLanProxyPasswordChanged(string value)
+    {
+        _settingsService.Settings.LanProxyPassword = value ?? "";
+        _settingsService.Save();
+        _ = _tunnel.RestartAsync();
+    }
+
     public ObservableCollection<CloseActionOption> CloseActions { get; } = new()
     {
         new CloseActionOption { Value = "ask", Display = "Always ask" },
@@ -271,8 +291,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     [ObservableProperty] private string _selectedProxyScheme = "http";
     partial void OnSelectedProxySchemeChanged(string value)
     {
-        _settingsService.Settings.UpstreamProxyScheme = NormalizeScheme(value);
-        _settingsService.Save();
+        PersistProxySettings();
         OnPropertyChanged(nameof(SupportsProxyCredentials));
         OnPropertyChanged(nameof(SupportsProxyPassword));
     }
@@ -280,10 +299,10 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     [ObservableProperty] private string _proxyHost = "";
     partial void OnProxyHostChanged(string value)
     {
-
         var hasProxy = !string.IsNullOrWhiteSpace(value);
         OnPropertyChanged(nameof(HasUpstreamProxy));
         OnPropertyChanged(nameof(IsCdnFrontingMode));
+        OnPropertyChanged(nameof(CanUseAutoFind));
         if (hasProxy && !_suppressProxyExclusion)
         {
             if (!string.Equals(SelectedProtocolMode, "direct", StringComparison.Ordinal))
@@ -292,11 +311,33 @@ public sealed partial class SettingsViewModel : PageViewModelBase
             }
             if (BeastMode) BeastMode = false;
         }
+        PersistProxySettings();
     }
 
     [ObservableProperty] private string _proxyPort = "";
+    partial void OnProxyPortChanged(string value) => PersistProxySettings();
+
     [ObservableProperty] private string _proxyUsername = "";
+    partial void OnProxyUsernameChanged(string value) => PersistProxySettings();
+
     [ObservableProperty] private string _proxyPassword = "";
+    partial void OnProxyPasswordChanged(string value) => PersistProxySettings();
+
+    private void PersistProxySettings()
+    {
+        var scheme = NormalizeScheme(SelectedProxyScheme);
+        var user = (ProxyUsername ?? "").Trim();
+        var pass = string.Equals(scheme, "socks4a", StringComparison.OrdinalIgnoreCase)
+            ? ""
+            : ProxyPassword ?? "";
+
+        var combined = BuildUpstreamProxy(scheme, ProxyHost, ProxyPort, user, pass);
+        _settingsService.Settings.UpstreamProxy = combined;
+        _settingsService.Settings.UpstreamProxyScheme = scheme;
+        _settingsService.Settings.UpstreamProxyUsername = user;
+        _settingsService.Settings.UpstreamProxyPassword = pass;
+        _settingsService.Save();
+    }
 
     public bool HasUpstreamProxy => !string.IsNullOrWhiteSpace(ProxyHost);
 
@@ -308,15 +349,31 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     !string.Equals(SelectedProxyScheme, "socks4a", StringComparison.OrdinalIgnoreCase);
 
     [ObservableProperty] private string _socksPort = "";
-    partial void OnSocksPortChanged(string value) => RefreshLanProxyInfo();
+    partial void OnSocksPortChanged(string value)
+    {
+        _settingsService.Settings.LocalSocksProxyPort = ParseListenPort(value);
+        _settingsService.Save();
+        RefreshLanProxyInfo();
+    }
 
     [ObservableProperty] private string _httpPort = "";
-    partial void OnHttpPortChanged(string value) => RefreshLanProxyInfo();
+    partial void OnHttpPortChanged(string value)
+    {
+        _settingsService.Settings.LocalHttpProxyPort = ParseListenPort(value);
+        _settingsService.Save();
+        RefreshLanProxyInfo();
+    }
 
     [ObservableProperty] private string _saveButtonText = "Save Settings";
 
     private void OnSettingsServiceChanged(object? sender, EventArgs e)
     {
+        if (System.Windows.Application.Current is { } app && !app.Dispatcher.CheckAccess())
+        {
+            app.Dispatcher.BeginInvoke(new Action(() => OnSettingsServiceChanged(sender, e)));
+            return;
+        }
+
         var s = _settingsService.Settings;
         if (!string.Equals(SelectedTheme, s.Theme, StringComparison.Ordinal))
         {
@@ -332,7 +389,24 @@ public sealed partial class SettingsViewModel : PageViewModelBase
             try { SelectedRegion = externalRegion; }
             finally { _suppressRegionSideEffects = false; }
         }
+
+        if (!string.Equals(CdnFrontingCustomIpList, s.CdnFrontingCustomIpList ?? "", StringComparison.Ordinal))
+        {
+            _suppressCdnIpListSideEffects = true;
+            try { CdnFrontingCustomIpList = s.CdnFrontingCustomIpList ?? ""; }
+            finally { _suppressCdnIpListSideEffects = false; }
+        }
+
+        if (!string.Equals(CdnFrontingCustomSni, s.CdnFrontingCustomSni ?? "", StringComparison.Ordinal))
+        {
+            _suppressCdnSniSideEffects = true;
+            try { CdnFrontingCustomSni = s.CdnFrontingCustomSni ?? ""; }
+            finally { _suppressCdnSniSideEffects = false; }
+        }
     }
+
+    private bool _suppressCdnIpListSideEffects;
+    private bool _suppressCdnSniSideEffects;
 
     [RelayCommand]
     private async Task SaveAsync()
@@ -392,6 +466,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _settingsService.Settings.ProtocolMode = value ?? "auto";
         _settingsService.Save();
         OnPropertyChanged(nameof(IsCdnFrontingMode));
+        OnPropertyChanged(nameof(CanUseAutoFind));
 
         if (value == "cdn_fronting" && HasUpstreamProxy)
         {
@@ -410,6 +485,14 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     public bool IsCdnFrontingMode =>
     SelectedProtocolMode == "cdn_fronting" && !HasUpstreamProxy;
 
+    /// <summary>
+    /// Auto-find IP &amp; SNI / Save-found are only meaningful when the
+    /// active protocol mode is CDN Fronting.  In Direct / Auto modes
+    /// tunnel-core never consults the FrontedMeekCDNScan* keys, so we
+    /// disable the controls in the UI.
+    /// </summary>
+    public bool CanUseAutoFind => IsCdnFrontingMode;
+
     public bool CanEditAdvancedTunneling => !HasUpstreamProxy;
 
     [ObservableProperty] private bool _beastMode;
@@ -418,6 +501,7 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     [ObservableProperty] private string _cdnFrontingCustomIpList = "";
     partial void OnCdnFrontingCustomIpListChanged(string value)
     {
+        if (_suppressCdnIpListSideEffects) return;
         _settingsService.Settings.CdnFrontingCustomIpList = value ?? "";
         _settingsService.Save();
     }
@@ -425,7 +509,23 @@ public sealed partial class SettingsViewModel : PageViewModelBase
     [ObservableProperty] private string _cdnFrontingCustomSni = "";
     partial void OnCdnFrontingCustomSniChanged(string value)
     {
+        if (_suppressCdnSniSideEffects) return;
         _settingsService.Settings.CdnFrontingCustomSni = value ?? "";
+        _settingsService.Save();
+    }
+
+    [ObservableProperty] private bool _autoFindIpAndSni;
+    partial void OnAutoFindIpAndSniChanged(bool value)
+    {
+        _settingsService.Settings.AutoFindIpAndSni = value;
+        _settingsService.Save();
+        _ = _tunnel.RestartAsync();
+    }
+
+    [ObservableProperty] private bool _saveFoundIpsAndSni;
+    partial void OnSaveFoundIpsAndSniChanged(bool value)
+    {
+        _settingsService.Settings.SaveFoundIpsAndSni = value;
         _settingsService.Save();
     }
 
@@ -443,6 +543,10 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         _settingsService.Settings.BeastMode = false;
         _settingsService.Settings.CdnFrontingCustomIpList = "";
         _settingsService.Settings.CdnFrontingCustomSni = "";
+        _settingsService.Settings.AutoFindIpAndSni = false;
+        _settingsService.Settings.SaveFoundIpsAndSni = false;
+        _settingsService.Settings.LanProxyUsername = "";
+        _settingsService.Settings.LanProxyPassword = "";
         _settingsService.Save();
 
         DisableTimeouts = false;
@@ -457,6 +561,10 @@ public sealed partial class SettingsViewModel : PageViewModelBase
         BeastMode = false;
         CdnFrontingCustomIpList = "";
         CdnFrontingCustomSni = "";
+        AutoFindIpAndSni = false;
+        SaveFoundIpsAndSni = false;
+        LanProxyUsername = "";
+        LanProxyPassword = "";
     }
 
     private static string BuildUpstreamProxy(

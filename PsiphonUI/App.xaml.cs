@@ -74,7 +74,7 @@ public partial class App : Application
 
         Services.GetRequiredService<IStartupRegistration>().SyncFromSetting(settings.Settings.StartWithWindows);
 
-        Services.GetRequiredService<IXrayTunManager>();
+        Services.GetRequiredService<ITunManager>();
 
         if (settings.Settings.AutoConnect)
         {
@@ -155,7 +155,7 @@ public partial class App : Application
         services.AddSingleton<IChildProcessGuard, ChildProcessGuard>();
         services.AddSingleton<IStartupReaper, StartupReaper>();
         services.AddSingleton<ITunnelCoreManager, TunnelCoreManager>();
-        services.AddSingleton<IXrayTunManager, XrayTunManager>();
+        services.AddSingleton<ITunManager, SingBoxTunManager>();
         services.AddSingleton<INavigationService, NavigationService>();
         services.AddSingleton<IIpHealthChecker, IpHealthChecker>();
 
@@ -206,8 +206,8 @@ public partial class App : Application
         try
         {
 
-            var xray = Services?.GetService<IXrayTunManager>();
-            if (xray is not null) xray.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            var tun = Services?.GetService<ITunManager>();
+            if (tun is not null) tun.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
             Services?.GetService<ITunnelCoreManager>()?.StopAsync().GetAwaiter().GetResult();
             Services?.GetService<ISystemProxyService>()?.Clear();

@@ -15,6 +15,12 @@ public interface ITunnelCoreManager
 
     string ConnectedServerRegion { get; }
 
+    string CurrentRouteIp { get; }
+
+    string CurrentRouteSni { get; }
+
+    event EventHandler? RouteChanged;
+
     IReadOnlyList<string> AvailableEgressRegions { get; }
     IReadOnlyList<string> RecentLog { get; }
 

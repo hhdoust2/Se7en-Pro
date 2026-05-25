@@ -57,13 +57,75 @@ public static class IpScannerPresets
     };
 
     private static readonly LabeledRange[] AkamaiRanges = BuildAkamaiRanges();
+    private static readonly LabeledRange[] CloudflareRanges = LoadEmbeddedCidrRanges(
+        "PsiphonUI.Resources.cloudflare_ip_ranges.txt", "Cloudflare");
+    private static readonly LabeledRange[] FastlyRanges = LoadEmbeddedCidrRanges(
+        "PsiphonUI.Resources.fastly_ip_ranges.txt", "Fastly");
 
     private static LabeledRange[] BuildAkamaiRanges()
     {
-        var ranges = new List<LabeledRange>(AkamaiBaselineRanges);
-        var seen = new HashSet<string>(ranges.Select(r => r.Cidr), StringComparer.Ordinal);
+        var ranges = new List<LabeledRange>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        AppendEmbeddedCidrRanges(
+            "PsiphonUI.Resources.akamai_ip_ranges.txt",
+            ranges,
+            seen,
+            labelOf: ParseAkamaiCidrLabel,
+            defaultSelected: true);
+
+        foreach (var r in AkamaiBaselineRanges)
+        {
+            if (seen.Add(r.Cidr)) ranges.Add(r);
+        }
+
         AppendSeededAkamaiRanges(ranges, seen);
         return ranges.ToArray();
+    }
+
+    private static string ParseAkamaiCidrLabel(string cidr)
+    {
+        var slash = cidr.IndexOf('/');
+        var ipPart = slash > 0 ? cidr[..slash] : cidr;
+        var parts = ipPart.Split('.');
+        if (parts.Length < 2) return "Akamai";
+        if (!byte.TryParse(parts[0], out var a)) return "Akamai";
+        if (!byte.TryParse(parts[1], out var b)) return "Akamai";
+        return ClassifyAkamaiRegion(a, b);
+    }
+
+    private static LabeledRange[] LoadEmbeddedCidrRanges(string resName, string label)
+    {
+        var ranges = new List<LabeledRange>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        AppendEmbeddedCidrRanges(resName, ranges, seen, labelOf: _ => label, defaultSelected: true);
+        return ranges.ToArray();
+    }
+
+    private static void AppendEmbeddedCidrRanges(
+        string resName,
+        List<LabeledRange> ranges,
+        HashSet<string> seen,
+        Func<string, string> labelOf,
+        bool defaultSelected)
+    {
+        var asm = typeof(IpScannerPresets).Assembly;
+        using var stream = asm.GetManifestResourceStream(resName);
+        if (stream is null) return;
+
+        using var reader = new StreamReader(stream);
+        string? line;
+        while ((line = reader.ReadLine()) != null)
+        {
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0) continue;
+            if (trimmed[0] == '#') continue;
+            if (trimmed.StartsWith("//", StringComparison.Ordinal)) continue;
+            var slash = trimmed.IndexOf('/');
+            if (slash <= 0) continue;
+            if (!seen.Add(trimmed)) continue;
+            ranges.Add(new LabeledRange(trimmed, labelOf(trimmed), defaultSelected));
+        }
     }
 
     private static void AppendSeededAkamaiRanges(List<LabeledRange> ranges, HashSet<string> seen)
@@ -121,6 +183,26 @@ public static class IpScannerPresets
         if (a == 184) return "Global";
         return "Global";
     }
+
+    private static readonly string[] CloudflareSnis =
+    {
+        "www.cloudflare.com",
+        "discord.com",
+        "www.cloudflareapps.com",
+        "cdnjs.cloudflare.com",
+        "www.shopify.com",
+        "www.medium.com",
+    };
+
+    private static readonly string[] FastlySnis =
+    {
+        "www.fastly.com",
+        "www.reddit.com",
+        "www.nytimes.com",
+        "www.imgur.com",
+        "www.spotify.com",
+        "developer.mozilla.org",
+    };
 
     private static readonly string[] GoogleSnis =
     {
@@ -221,11 +303,13 @@ public static class IpScannerPresets
 
     public static readonly IReadOnlyList<Preset> All = new Preset[]
 {
-        new(Id: "akamai",  Name: "Akamai",            Snis: AkamaiSnis, Ranges: AkamaiRanges),
-        new(Id: "google",  Name: "Google CDN",        Snis: GoogleSnis, Ranges: GoogleRanges),
-        new(Id: "amazon",  Name: "Amazon CloudFront", Snis: AmazonSnis, Ranges: AmazonRanges),
-        new(Id: "azure",   Name: "Microsoft Azure",   Snis: AzureSnis,  Ranges: AzureRanges),
-        new(Id: "iran-isp",Name: "Iran ISP pre-tested (MCI / Irancell / Rightel / Shatel)",
-                                                     Snis: AkamaiSnis, Ranges: IranIspMixRanges),
+        new(Id: "akamai",     Name: "Akamai",            Snis: AkamaiSnis,     Ranges: AkamaiRanges),
+        new(Id: "cloudflare", Name: "Cloudflare",        Snis: CloudflareSnis, Ranges: CloudflareRanges),
+        new(Id: "fastly",     Name: "Fastly",            Snis: FastlySnis,     Ranges: FastlyRanges),
+        new(Id: "google",     Name: "Google CDN",        Snis: GoogleSnis,     Ranges: GoogleRanges),
+        new(Id: "amazon",     Name: "Amazon CloudFront", Snis: AmazonSnis,     Ranges: AmazonRanges),
+        new(Id: "azure",      Name: "Microsoft Azure",   Snis: AzureSnis,      Ranges: AzureRanges),
+        new(Id: "iran-isp",   Name: "Iran ISP pre-tested (MCI / Irancell / Rightel / Shatel)",
+                                                         Snis: AkamaiSnis,     Ranges: IranIspMixRanges),
 };
 }

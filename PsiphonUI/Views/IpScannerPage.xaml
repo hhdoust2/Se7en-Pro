@@ -14,590 +14,918 @@
         <conv:NullableIntMsConverter x:Key="MsConverter" />
         <conv:NullableIntConverter x:Key="IntConverter" />
         <conv:InverseBoolConverter x:Key="InverseBool" />
+        <conv:LongConverter x:Key="LongConverter" />
+        <conv:LatencyToBrushConverter x:Key="LatencyBrush" />
+        <conv:LatencyToSoftBrushConverter x:Key="LatencySoftBrush" />
     </UserControl.Resources>
 
-    <Grid Margin="18,12,18,14">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
+    <materialDesign:DialogHost
+        IsOpen="{Binding IsSettingsOpen, Mode=TwoWay}"
+        CloseOnClickAway="False"
+        OverlayBackground="#A6000000"
+        DialogTheme="Inherit">
 
-            <RowDefinition Height="Auto" />
-
-            <RowDefinition Height="Auto" />
-
-            <RowDefinition Height="Auto" />
-
-            <RowDefinition Height="*" />
-
-            <RowDefinition Height="Auto" />
-
-        </Grid.RowDefinitions>
-
-<Grid Grid.Row="0" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Style="{StaticResource UI.Title}" Text="IP Scanner" Margin="0" />
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                <Border Style="{StaticResource UI.StatusBadge.Info}" Margin="0,0,6,0">
-                    <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
-                               Text="{Binding TotalCount, StringFormat='TOTAL {0}'}" />
-                </Border>
-                <Border Style="{StaticResource UI.StatusBadge.Info}" Margin="0,0,6,0">
-                    <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
-                               Text="{Binding ScannedCount, StringFormat='SCANNED {0}'}" />
-                </Border>
-                <Border Style="{StaticResource UI.StatusBadge.Good}" Margin="0,0,6,0">
-                    <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#10B981"
-                               Text="{Binding HealthyCount, StringFormat='OK {0}'}" />
-                </Border>
-                <Border Style="{StaticResource UI.StatusBadge.Bad}">
-                    <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#EF4444"
-                               Text="{Binding FailedCount, StringFormat='FAIL {0}'}" />
-                </Border>
-            </StackPanel>
-        </Grid>
-
-<Border Grid.Row="1" Style="{StaticResource UI.SectionCard}" Margin="0,0,0,8" Padding="14,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.6*" />
-
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="1*" />
-
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="90" />
-
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="110" />
-
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0">
-                    <TextBlock Style="{StaticResource UI.FieldLabel}" Text="CDN PRESET" />
-                    <ComboBox ItemsSource="{Binding Presets}"
-                              SelectedItem="{Binding SelectedPreset}"
-                              DisplayMemberPath="Name" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="2">
-                    <TextBlock Style="{StaticResource UI.FieldLabel}" Text="CHECK METHOD" />
-                    <ComboBox ItemsSource="{Binding CheckMethods}" SelectedItem="{Binding SelectedCheckMethod}" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="4">
-                    <TextBlock Style="{StaticResource UI.FieldLabel}" Text="CONCURRENCY" />
-                    <TextBox Text="{Binding Concurrency, UpdateSourceTrigger=PropertyChanged}"
-                             materialDesign:HintAssist.Hint="1..200" />
-                </StackPanel>
-
-                <StackPanel Grid.Column="6">
-                    <TextBlock Style="{StaticResource UI.FieldLabel}" Text="TIMEOUT (MS)" />
-                    <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}"
-                             materialDesign:HintAssist.Hint="500..30000" />
-                </StackPanel>
-            </Grid>
-        </Border>
-
-<StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
-            <Button Style="{StaticResource UI.PrimaryButton}"
-                    Content="Start scan"
-                    Command="{Binding StartCommand}"
-                    MinWidth="130"
-                    IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}" />
-
-            <Button Margin="8,0,0,0"
-                    Style="{StaticResource UI.GhostButton}"
-                    Command="{Binding PauseCommand}"
-                    Visibility="{Binding IsRunningAndNotPaused, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <StackPanel Orientation="Horizontal">
-                    <materialDesign:PackIcon Kind="Pause" Width="14" Height="14" Margin="0,0,6,0" />
-                    <TextBlock Text="Pause" />
-                </StackPanel>
-            </Button>
-
-            <Button Margin="8,0,0,0"
-                    Style="{StaticResource UI.SuccessButton}"
-                    Command="{Binding ResumeCommand}"
-                    Visibility="{Binding IsPaused, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <StackPanel Orientation="Horizontal">
-                    <materialDesign:PackIcon Kind="Play" Width="14" Height="14" Margin="0,0,6,0" />
-                    <TextBlock Text="Resume" />
-                </StackPanel>
-            </Button>
-
-            <Button Margin="8,0,0,0"
-                    Style="{StaticResource UI.DangerButton}"
-                    Content="Stop"
-                    Command="{Binding StopCommand}"
-                    IsEnabled="{Binding IsRunning}" />
-
-            <Button Margin="8,0,0,0"
-                    Style="{StaticResource UI.GhostButton}"
-                    Content="Clear"
-                    Command="{Binding ClearCommand}"
-                    IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}" />
-        </StackPanel>
-
-<StackPanel Grid.Row="3" Margin="0,0,0,8">
-            <TextBlock Text="{Binding StatusText}"
-                       FontSize="11" Opacity="0.7"
-                       TextWrapping="Wrap"
-                       TextTrimming="CharacterEllipsis"
-                       MaxHeight="34"
-                       FontFamily="Cascadia Mono, Consolas, Courier New, monospace" />
-            <ProgressBar Margin="0,5,0,0" Height="3"
-                         Minimum="0"
-                         Maximum="{Binding TotalCount}"
-                         Value="{Binding ScannedCount, Mode=OneWay}"
-                         Foreground="{StaticResource Brand.AccentBrush}"
-                         Background="{DynamicResource Surface.SubtleBg}" />
-        </StackPanel>
-
-<Grid Grid.Row="4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250" />
-                <ColumnDefinition Width="10" />
-                <ColumnDefinition Width="1*" MinWidth="300" />
-                <ColumnDefinition Width="10" />
-                <ColumnDefinition Width="1*" MinWidth="300" />
-            </Grid.ColumnDefinitions>
-
-<Border Grid.Column="0" Style="{StaticResource UI.SectionCard}" Padding="0">
+        <materialDesign:DialogHost.DialogContent>
+            <Border Width="820" MaxHeight="640"
+                    CornerRadius="14"
+                    Background="{DynamicResource Surface.CardBg}"
+                    BorderBrush="{DynamicResource Surface.BorderBrush}"
+                    BorderThickness="1"
+                    Padding="0">
                 <DockPanel LastChildFill="True">
 
-                    <StackPanel DockPanel.Dock="Top" Margin="14,12,14,8">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <materialDesign:PackIcon Kind="FormatListChecks" Width="16" Height="16"
-                                                      Foreground="{StaticResource Brand.AccentBrush}" />
-                            <TextBlock Text="Ranges" Style="{StaticResource UI.SectionTitle}"
-                                       Margin="6,0,0,0" />
-                        </StackPanel>
-                        <Border Style="{StaticResource UI.StatusBadge.Info}"
-                                HorizontalAlignment="Left" Margin="0,6,0,0">
-                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
-                                       Text="{Binding AvailableRangesSummary}" />
+                    <Grid DockPanel.Dock="Top" Margin="22,18,14,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0"
+                                Width="34" Height="34" CornerRadius="10"
+                                Background="{DynamicResource Surface.SubtleBg}"
+                                BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                BorderThickness="1"
+                                VerticalAlignment="Center">
+                            <materialDesign:PackIcon Kind="Tune" Width="18" Height="18"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center"
+                                                     Foreground="{StaticResource Brand.AccentBrush}" />
                         </Border>
-                    </StackPanel>
-
-<Grid DockPanel.Dock="Top" Margin="14,0,14,10">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid Grid.Row="0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="4" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="4" />
-                                <ColumnDefinition Width="2*" />
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0"
-                                    Style="{StaticResource UI.GhostButton}"
-                                    Padding="0,4"
-                                    Command="{Binding SelectAllRangesCommand}"
-                                    ToolTip="Tick every CIDR in the list">
-                                <TextBlock Text="All" FontSize="11" HorizontalAlignment="Center" />
-                            </Button>
-                            <Button Grid.Column="2"
-                                    Style="{StaticResource UI.GhostButton}"
-                                    Padding="0,4"
-                                    Command="{Binding ClearRangeSelectionCommand}"
-                                    ToolTip="Untick every CIDR">
-                                <TextBlock Text="None" FontSize="11" HorizontalAlignment="Center" />
-                            </Button>
-                            <Button Grid.Column="4"
-                                    Style="{StaticResource UI.PrimaryButton}"
-                                    Padding="0,4"
-                                    Command="{Binding ImportSelectedRangesCommand}"
-                                    IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}"
-                                    ToolTip="Expand the ticked CIDRs (plus any custom IPs below) into the scan queue">
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                    <materialDesign:PackIcon Kind="Refresh" Width="13" Height="13" Margin="0,0,5,0" />
-                                    <TextBlock Text="Generate" FontSize="11" />
-                                </StackPanel>
-                            </Button>
-                        </Grid>
-                        <Button Grid.Row="1"
+                        <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center">
+                            <TextBlock Text="Scan settings" FontSize="16" FontWeight="SemiBold" />
+                            <TextBlock Text="Configure method, ranges and generate IPs to scan."
+                                       FontSize="11" Opacity="0.65" Margin="0,2,0,0" />
+                        </StackPanel>
+                        <Button Grid.Column="2"
                                 Style="{StaticResource UI.GhostButton}"
-                                Padding="0,5"
-                                Margin="0,6,0,0"
-                                BorderBrush="{StaticResource Brand.ErrorBrush}"
-                                Foreground="{StaticResource Brand.ErrorBrush}"
-                                HorizontalAlignment="Stretch"
-                                Command="{Binding ClearCustomInputCommand}"
-                                IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}"
-                                ToolTip="Empty the IPs textbox and clear the scan queue">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <materialDesign:PackIcon Kind="Eraser" Width="13" Height="13" Margin="0,0,5,0" />
-                                <TextBlock Text="Clear queue and custom IPs" FontSize="11" />
-                            </StackPanel>
+                                Padding="6"
+                                MinHeight="32" MinWidth="32"
+                                ToolTip="Close"
+                                Command="{Binding CloseSettingsCommand}">
+                            <materialDesign:PackIcon Kind="Close" Width="16" Height="16" />
                         </Button>
                     </Grid>
 
-<TextBox DockPanel.Dock="Top"
-                             Margin="14,0,14,6"
-                             Padding="8,4"
-                             FontFamily="{StaticResource UI.FontFamily}"
-                             FontSize="12"
-                             Text="{Binding RangesFilter, UpdateSourceTrigger=PropertyChanged, Delay=120}"
-                             materialDesign:HintAssist.Hint="Filter ranges (e.g. 23.215  ·  EU  ·  Global)" />
-
-<Border DockPanel.Dock="Top"
-                            BorderBrush="{DynamicResource Surface.BorderBrush}"
-                            BorderThickness="0,1,0,1"
+                    <Border DockPanel.Dock="Bottom"
                             Background="{DynamicResource Surface.SubtleBg}"
-                            Margin="0,0,0,0">
-                        <ListBox ItemsSource="{Binding AvailableRanges}"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 MaxHeight="220"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                 VirtualizingPanel.IsVirtualizing="True">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="Padding" Value="6,2" />
-                                    <Setter Property="Background" Value="Transparent" />
-                                    <Setter Property="BorderThickness" Value="0" />
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
+                            BorderBrush="{DynamicResource Surface.BorderBrush}"
+                            BorderThickness="0,1,0,0"
+                            Padding="18,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                       FontSize="11" Opacity="0.7"
+                                       Text="{Binding SelectedRangeIpTotalDisplay}" />
+                            <Button Grid.Column="1"
+                                    Style="{StaticResource UI.GhostButton}"
+                                    Padding="14,8"
+                                    Margin="0,0,8,0"
+                                    Command="{Binding CloseSettingsCommand}">
+                                <TextBlock Text="Close" />
+                            </Button>
+                            <Button Grid.Column="2"
+                                    Style="{StaticResource UI.GhostButton}"
+                                    Padding="14,8"
+                                    Margin="0,0,8,0"
+                                    Command="{Binding SaveSettingsCommand}"
+                                    IsEnabled="{Binding IsGenerating, Converter={StaticResource InverseBool}}"
+                                    ToolTip="Save scan settings without regenerating the IP queue">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="ContentSave" Width="14" Height="14" Margin="0,0,6,0" />
+                                    <TextBlock Text="Save" />
+                                </StackPanel>
+                            </Button>
+                            <Button Grid.Column="3"
+                                    Style="{StaticResource UI.PrimaryButton}"
+                                    Padding="22,8"
+                                    Command="{Binding ImportSelectedRangesCommand}"
+                                    IsEnabled="{Binding CanGenerateFromRanges}"
+                                    ToolTip="A file-loaded list is in use. Press Clear to re-enable ranges.">
+                                <StackPanel Orientation="Horizontal">
+                                    <materialDesign:PackIcon Kind="AutoFix" Width="14" Height="14" Margin="0,0,8,0" />
+                                    <TextBlock Text="Generate" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0">
+                        <StackPanel Margin="22,4,22,18">
+
+                            <Border Style="{StaticResource UI.SectionCard}" Padding="14,12" Margin="0,4,0,10">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <materialDesign:PackIcon Kind="Speedometer" Width="16" Height="16"
+                                                                  Foreground="{StaticResource Brand.AccentBrush}" />
+                                        <TextBlock Text="Method &amp; timing" Style="{StaticResource UI.SectionTitle}"
+                                                   Margin="8,0,0,0" />
+                                    </StackPanel>
                                     <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="10" />
+                                            <ColumnDefinition Width="120" />
+                                            <ColumnDefinition Width="10" />
+                                            <ColumnDefinition Width="140" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Style="{StaticResource UI.FieldLabel}" Text="CHECK METHOD" />
+                                            <ComboBox ItemsSource="{Binding CheckMethods}"
+                                                      SelectedItem="{Binding SelectedCheckMethod}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Style="{StaticResource UI.FieldLabel}" Text="CONCURRENCY" />
+                                            <TextBox Text="{Binding Concurrency, UpdateSourceTrigger=PropertyChanged}"
+                                                     materialDesign:HintAssist.Hint="1..200" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="4">
+                                            <TextBlock Style="{StaticResource UI.FieldLabel}" Text="TIMEOUT (MS)" />
+                                            <TextBox Text="{Binding TimeoutMs, UpdateSourceTrigger=PropertyChanged}"
+                                                     materialDesign:HintAssist.Hint="500..30000" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Border BorderBrush="{DynamicResource Surface.BorderBrush}"
+                                            BorderThickness="0,1,0,0" Margin="0,12,0,0" Padding="0,10,0,0"
+                                            Visibility="{Binding IsTlsMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <materialDesign:PackIcon Kind="LockOutline" Width="13" Height="13"
+                                                                          Margin="0,0,6,0"
+                                                                          Foreground="{StaticResource Brand.AccentBrush}" />
+                                                <TextBlock Text="TLS SNI HOSTNAME"
+                                                           Style="{StaticResource UI.FieldLabel}"
+                                                           Margin="0" />
+                                            </StackPanel>
+                                            <ListBox ItemsSource="{Binding AvailableSnis}"
+                                                     BorderThickness="0"
+                                                     Background="Transparent"
+                                                     MaxHeight="120"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                     ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                                <ListBox.ItemContainerStyle>
+                                                    <Style TargetType="ListBoxItem">
+                                                        <Setter Property="Padding" Value="2,1" />
+                                                        <Setter Property="Background" Value="Transparent" />
+                                                        <Setter Property="BorderThickness" Value="0" />
+                                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                    </Style>
+                                                </ListBox.ItemContainerStyle>
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <RadioButton
+                                                                GroupName="SniHostRadios"
+                                                                IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                VerticalAlignment="Center"
+                                                                Margin="0,0,6,0" />
+                                                            <TextBlock Text="{Binding Hostname}"
+                                                                       FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
+                                                                       FontSize="12"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                            <TextBox Margin="0,6,0,0"
+                                                     Text="{Binding SniHost, UpdateSourceTrigger=PropertyChanged}"
+                                                     materialDesign:HintAssist.Hint="custom SNI override" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource UI.SectionCard}" Padding="14,12" Margin="0,0,0,10">
+                                <StackPanel IsEnabled="{Binding CanUseRanges}">
+                                    <Grid Margin="0,0,0,8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <CheckBox Grid.Column="0"
-                                                  IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                  VerticalAlignment="Center"
-                                                  Margin="0,0,8,0" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{Binding Cidr}"
-                                                   FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
-                                                   FontSize="12"
-                                                   VerticalAlignment="Center" />
-                                        <Border Grid.Column="2" Background="#1E293B"
-                                                Padding="6,1" CornerRadius="3"
-                                                VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Label}"
-                                                       FontSize="10" Foreground="#94A3B8" />
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <materialDesign:PackIcon Kind="FormatListChecks" Width="16" Height="16"
+                                                                      Foreground="{StaticResource Brand.AccentBrush}" />
+                                            <TextBlock Text="CDN ranges" Style="{StaticResource UI.SectionTitle}"
+                                                       Margin="8,0,0,0" />
+                                        </StackPanel>
+                                        <Border Grid.Column="2" Style="{StaticResource UI.StatusBadge.Info}">
+                                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
+                                                       Text="{Binding AvailableRangesSummary}" />
                                         </Border>
                                     </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </Border>
 
-<Border DockPanel.Dock="Bottom"
-                            Margin="0,0,0,0"
-                            Padding="14,8,14,10"
-                            Background="{DynamicResource Surface.SubtleBg}"
-                            BorderBrush="{DynamicResource Surface.BorderBrush}"
-                            BorderThickness="0,1,0,0"
-                            Visibility="{Binding IsTlsMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                <materialDesign:PackIcon Kind="LockOutline" Width="13" Height="13" Margin="0,0,4,0"
-                                                          Foreground="{StaticResource Brand.AccentBrush}"
-                                                          VerticalAlignment="Center" />
-                                <TextBlock Text="TLS SNI HOSTNAME"
-                                           Style="{StaticResource UI.FieldLabel}"
-                                           VerticalAlignment="Center" Margin="0" />
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Style="{StaticResource UI.FieldLabel}" Text="CDN PRESET" />
+                                            <ComboBox ItemsSource="{Binding Presets}"
+                                                      SelectedItem="{Binding SelectedPreset}"
+                                                      DisplayMemberPath="Name" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Style="{StaticResource UI.FieldLabel}" Text="FILTER" />
+                                            <TextBox Text="{Binding RangesFilter, UpdateSourceTrigger=PropertyChanged, Delay=120}"
+                                                     materialDesign:HintAssist.Hint="e.g. 23.215  ·  EU  ·  Global"
+                                                     materialDesign:TextFieldAssist.HasLeadingIcon="True"
+                                                     materialDesign:TextFieldAssist.LeadingIcon="Magnify" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="6" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button Grid.Column="0"
+                                                Style="{StaticResource UI.GhostButton}"
+                                                Padding="0,6"
+                                                Command="{Binding SelectAllRangesCommand}">
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                <materialDesign:PackIcon Kind="SelectAll" Width="13" Height="13" Margin="0,0,6,0" />
+                                                <TextBlock Text="Select all" FontSize="11" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Grid.Column="2"
+                                                Style="{StaticResource UI.GhostButton}"
+                                                Padding="0,6"
+                                                Command="{Binding ClearRangeSelectionCommand}">
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                <materialDesign:PackIcon Kind="SelectOff" Width="13" Height="13" Margin="0,0,6,0" />
+                                                <TextBlock Text="Clear selection" FontSize="11" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+
+                                    <Border BorderBrush="{DynamicResource Surface.BorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            Background="{DynamicResource Surface.SubtleBg}">
+                                        <ListBox ItemsSource="{Binding AvailableRanges}"
+                                                 BorderThickness="0"
+                                                 Background="Transparent"
+                                                 Height="220"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                                 VirtualizingPanel.IsVirtualizing="True"
+                                                 VirtualizingPanel.VirtualizationMode="Recycling">
+                                            <ListBox.ItemContainerStyle>
+                                                <Style TargetType="ListBoxItem">
+                                                    <Setter Property="Padding" Value="8,3" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="BorderThickness" Value="0" />
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                </Style>
+                                            </ListBox.ItemContainerStyle>
+                                            <ListBox.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <CheckBox Grid.Column="0"
+                                                                  IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                  VerticalAlignment="Center"
+                                                                  Margin="0,0,10,0" />
+                                                        <TextBlock Grid.Column="1"
+                                                                   Text="{Binding Cidr}"
+                                                                   FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
+                                                                   FontSize="12"
+                                                                   VerticalAlignment="Center" />
+                                                        <Border Grid.Column="2" Background="#1E293B"
+                                                                Padding="6,1" CornerRadius="3"
+                                                                VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Label}"
+                                                                       FontSize="10" Foreground="#94A3B8" />
+                                                        </Border>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ListBox.ItemTemplate>
+                                        </ListBox>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource UI.SectionCard}" Padding="14,12" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                        <materialDesign:PackIcon Kind="AutoFix" Width="16" Height="16"
+                                                                  Foreground="{StaticResource Brand.AccentBrush}" />
+                                        <TextBlock Text="Generate IPs" Style="{StaticResource UI.SectionTitle}"
+                                                   Margin="8,0,0,0" />
+                                        <Border Style="{StaticResource UI.StatusBadge.Info}" Margin="10,0,0,0">
+                                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
+                                                       Text="{Binding SelectedRangeIpTotalDisplay}" />
+                                        </Border>
+                                    </StackPanel>
+
+                                    <Grid Margin="0,0,0,6" IsEnabled="{Binding CanGenerateFromRanges}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="10" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Style="{StaticResource UI.FieldLabel}" Text="TARGET COUNT (UP TO POOL SIZE)" />
+                                            <TextBox Text="{Binding TargetCount, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource LongConverter}}"
+                                                     materialDesign:HintAssist.Hint="e.g. 5000  ·  100000  ·  1000000" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Bottom" Orientation="Horizontal">
+                                            <Button Style="{StaticResource UI.GhostButton}" Padding="10,8" Margin="0,0,6,0"
+                                                    Command="{Binding ImportSelectedRangesCommand}"
+                                                    CommandParameter="5000"
+                                                    ToolTip="5000">
+                                                <TextBlock Text="5k" FontSize="11" />
+                                            </Button>
+                                            <Button Style="{StaticResource UI.GhostButton}" Padding="10,8" Margin="0,0,6,0"
+                                                    Command="{Binding ImportSelectedRangesCommand}"
+                                                    CommandParameter="50000"
+                                                    ToolTip="50000">
+                                                <TextBlock Text="50k" FontSize="11" />
+                                            </Button>
+                                            <Button Style="{StaticResource UI.GhostButton}" Padding="10,8" Margin="0,0,6,0"
+                                                    Command="{Binding ImportSelectedRangesCommand}"
+                                                    CommandParameter="500000"
+                                                    ToolTip="500000">
+                                                <TextBlock Text="500k" FontSize="11" />
+                                            </Button>
+                                            <Button Style="{StaticResource UI.GhostButton}" Padding="10,8" Margin="0,0,6,0"
+                                                    Command="{Binding ImportSelectedRangesCommand}"
+                                                    CommandParameter="5000000"
+                                                    ToolTip="5,000,000">
+                                                <TextBlock Text="5M" FontSize="11" />
+                                            </Button>
+                                            <Button Style="{StaticResource UI.GhostButton}" Padding="10,8"
+                                                    Command="{Binding ImportSelectedRangesCommand}"
+                                                    CommandParameter="0"
+                                                    ToolTip="Use the full pool size (auto-chunks if larger than 1,000,000).">
+                                                <TextBlock Text="Max" FontSize="11" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <TextBlock FontSize="11" Opacity="0.7" Margin="0,0,0,8"
+                                               TextWrapping="Wrap"
+                                               Text="Type any count (up to pool size, including 16M for a full /8) or use the quick-pick chips. If the queue exceeds 1,000,000 IPs the scanner automatically processes it in 1M-IP chunks at scan time so memory stays bounded." />
+
+                                    <ProgressBar Height="3"
+                                                 Visibility="{Binding IsGenerating, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                 IsIndeterminate="True"
+                                                 Foreground="{StaticResource Brand.AccentBrush}"
+                                                 Background="{DynamicResource Surface.SubtleBg}"
+                                                 Margin="0,2,0,8" />
+
+                                    <Border BorderBrush="{DynamicResource Surface.BorderBrush}"
+                                            BorderThickness="0,1,0,0" Padding="0,10,0,8">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                <TextBlock Style="{StaticResource UI.FieldLabel}" Text="LOAD FROM .TXT FILE" Margin="0,0,0,2" />
+                                                <TextBlock FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                                                           Text="Pick a .txt file with one IP, CIDR or range per line. Replaces the current queue." />
+                                            </StackPanel>
+                                            <Button Grid.Column="1"
+                                                    Style="{StaticResource UI.GhostButton}"
+                                                    Padding="14,8"
+                                                    VerticalAlignment="Center"
+                                                    Command="{Binding LoadFromFileCommand}"
+                                                    IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}"
+                                                    ToolTip="Load IPs from a .txt file">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <materialDesign:PackIcon Kind="FileUploadOutline" Width="14" Height="14" Margin="0,0,6,0" />
+                                                    <TextBlock Text="Load .txt" />
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border BorderBrush="{DynamicResource Surface.BorderBrush}"
+                                            BorderThickness="0,1,0,0" Padding="0,10,0,0">
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource UI.FieldLabel}" Text="OPTIONAL CUSTOM IPs / RANGES" />
+                                            <TextBox Text="{Binding CustomInput, UpdateSourceTrigger=PropertyChanged}"
+                                                     AcceptsReturn="True"
+                                                     TextWrapping="NoWrap"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     HorizontalScrollBarVisibility="Auto"
+                                                     Height="80"
+                                                     FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
+                                                     FontSize="12"
+                                                     materialDesign:HintAssist.Hint="1.2.3.4  ·  10.0.0.0/24  ·  1.2.3.0-100" />
+                                            <Button Style="{StaticResource UI.GhostButton}"
+                                                    HorizontalAlignment="Right"
+                                                    Padding="12,5"
+                                                    Margin="0,6,0,0"
+                                                    BorderBrush="{StaticResource Brand.ErrorBrush}"
+                                                    Foreground="{StaticResource Brand.ErrorBrush}"
+                                                    Command="{Binding ClearCustomInputCommand}"
+                                                    IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <materialDesign:PackIcon Kind="Eraser" Width="13" Height="13" Margin="0,0,5,0" />
+                                                    <TextBlock Text="Clear custom IPs and queue" FontSize="11" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </materialDesign:DialogHost.DialogContent>
+
+            <Grid Margin="18,12,18,14" MinWidth="720" MinHeight="520">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" MinHeight="320" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Style="{StaticResource UI.Title}" Text="IP Scanner" Margin="0" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border Style="{StaticResource UI.StatusBadge.Info}" Margin="0,0,6,0">
+                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
+                                       Text="{Binding TotalCount, StringFormat='TOTAL {0:N0}'}" />
+                        </Border>
+                        <Border Style="{StaticResource UI.StatusBadge.Info}" Margin="0,0,6,0">
+                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
+                                       Text="{Binding ScannedCount, StringFormat='SCANNED {0:N0}'}" />
+                        </Border>
+                        <Border Style="{StaticResource UI.StatusBadge.Good}" Margin="0,0,6,0">
+                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#10B981"
+                                       Text="{Binding HealthyCount, StringFormat='OK {0:N0}'}" />
+                        </Border>
+                        <Border Style="{StaticResource UI.StatusBadge.Bad}">
+                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#EF4444"
+                                       Text="{Binding FailedCount, StringFormat='FAIL {0:N0}'}" />
+                        </Border>
+                    </StackPanel>
+                </Grid>
+
+                <Border Grid.Row="1" Style="{StaticResource UI.SectionCard}" Padding="14,12" Margin="0,0,0,10">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+
+                        <Button Style="{StaticResource UI.PrimaryButton}"
+                                Content="Start scan"
+                                Command="{Binding StartCommand}"
+                                MinWidth="130"
+                                IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}" />
+
+                        <Button Style="{StaticResource UI.GhostButton}"
+                                Width="40" Height="40"
+                                MinHeight="40"
+                                Padding="0"
+                                Margin="10,0,0,0"
+                                Command="{Binding OpenSettingsCommand}"
+                                ToolTip="Scan settings, ranges and IP generation"
+                                Background="{StaticResource Brand.AccentBrush}"
+                                BorderBrush="{StaticResource Brand.AccentBrush}"
+                                Foreground="White">
+                            <Button.Resources>
+                                <Style TargetType="Border">
+                                    <Setter Property="CornerRadius" Value="20" />
+                                </Style>
+                            </Button.Resources>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd"
+                                            CornerRadius="20"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}">
+                                        <ContentPresenter HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"
+                                                          TextElement.Foreground="{TemplateBinding Foreground}" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+                                        </Trigger>
+                                        <Trigger Property="IsPressed" Value="True">
+                                            <Setter TargetName="Bd" Property="Opacity" Value="0.7" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Button.Template>
+                            <materialDesign:PackIcon Kind="Tune" Width="20" Height="20"
+                                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Button>
+
+                        <Button Margin="8,0,0,0"
+                                Style="{StaticResource UI.GhostButton}"
+                                Command="{Binding PauseCommand}"
+                                Visibility="{Binding IsRunningAndNotPaused, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Pause" Width="14" Height="14" Margin="0,0,6,0" />
+                                <TextBlock Text="Pause" />
                             </StackPanel>
+                        </Button>
 
-                            <ListBox ItemsSource="{Binding AvailableSnis}"
-                                     BorderThickness="0"
+                        <Button Margin="8,0,0,0"
+                                Style="{StaticResource UI.SuccessButton}"
+                                Command="{Binding ResumeCommand}"
+                                Visibility="{Binding IsPaused, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Play" Width="14" Height="14" Margin="0,0,6,0" />
+                                <TextBlock Text="Resume" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button Margin="8,0,0,0"
+                                Style="{StaticResource UI.DangerButton}"
+                                Content="Stop"
+                                Command="{Binding StopCommand}"
+                                IsEnabled="{Binding IsRunning}" />
+
+                        <Button Margin="8,0,0,0"
+                                Style="{StaticResource UI.GhostButton}"
+                                Content="Clear"
+                                Command="{Binding ClearCommand}"
+                                IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Grid.Row="2" Margin="0,0,0,8">
+                    <TextBlock Text="{Binding StatusText}"
+                               FontSize="11" Opacity="0.7"
+                               TextWrapping="Wrap"
+                               TextTrimming="CharacterEllipsis"
+                               MaxHeight="34"
+                               FontFamily="Cascadia Mono, Consolas, Courier New, monospace" />
+                    <ProgressBar Margin="0,5,0,0" Height="3"
+                                 Minimum="0"
+                                 Maximum="{Binding TotalCount}"
+                                 Value="{Binding ScannedCount, Mode=OneWay}"
+                                 Foreground="{StaticResource Brand.AccentBrush}"
+                                 Background="{DynamicResource Surface.SubtleBg}" />
+                </StackPanel>
+
+                <Grid Grid.Row="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1*" MinWidth="300" />
+                        <ColumnDefinition Width="10" />
+                        <ColumnDefinition Width="1*" MinWidth="300" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource UI.SectionCard}" Padding="0">
+                        <DockPanel LastChildFill="True">
+                            <Grid DockPanel.Dock="Top" Margin="16,14,16,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <materialDesign:PackIcon Kind="MagnifyScan" Width="18" Height="18"
+                                                              Foreground="{StaticResource Brand.AccentBrush}" />
+                                    <TextBlock Text="Queue / Failed" Style="{StaticResource UI.SectionTitle}"
+                                               Margin="8,0,0,0" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Style="{StaticResource UI.StatusBadge.Info}">
+                                    <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
+                                               Text="{Binding Candidates.Count, StringFormat='{}{0:N0} items'}" />
+                                </Border>
+                            </Grid>
+
+                            <ListBox ItemsSource="{Binding Candidates}"
                                      Background="Transparent"
-                                     MaxHeight="150"
+                                     BorderThickness="0"
+                                     Margin="10,0,10,10"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      ScrollViewer.CanContentScroll="True"
-                                     VirtualizingPanel.IsVirtualizing="True">
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling"
+                                     VirtualizingPanel.ScrollUnit="Pixel">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="2,1" />
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,2,0,2" />
                                         <Setter Property="Background" Value="Transparent" />
                                         <Setter Property="BorderThickness" Value="0" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter />
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
                                     </Style>
                                 </ListBox.ItemContainerStyle>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <RadioButton
-                                                GroupName="SniHostRadios"
-                                                IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                VerticalAlignment="Center"
-                                                Margin="0,0,6,0" />
-                                            <TextBlock Text="{Binding Hostname}"
-                                                       FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
-                                                       FontSize="12"
-                                                       VerticalAlignment="Center" />
-                                        </StackPanel>
+                                        <Border CornerRadius="8"
+                                                Background="{DynamicResource Surface.SubtleBg}"
+                                                BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                                BorderThickness="1"
+                                                Padding="10,6">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0"
+                                                        Width="8" Height="8" CornerRadius="4"
+                                                        Background="{Binding Status, Converter={StaticResource IpStatusBrush}}"
+                                                        VerticalAlignment="Center"
+                                                        Margin="0,0,10,0" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Ip}"
+                                                           FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
+                                                           FontSize="13"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="None" />
+                                                <Border Grid.Column="2"
+                                                        CornerRadius="6"
+                                                        Background="{DynamicResource Surface.HoverBg}"
+                                                        Padding="8,2"
+                                                        Margin="6,0,8,0"
+                                                        VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding LatencyMs, Converter={StaticResource MsConverter}}"
+                                                               FontSize="11"
+                                                               FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
+                                                               Foreground="{Binding Status, Converter={StaticResource IpStatusBrush}}" />
+                                                </Border>
+                                                <Border Grid.Column="3"
+                                                        Width="26" Height="26" CornerRadius="13"
+                                                        Background="Transparent"
+                                                        BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                                        BorderThickness="1"
+                                                        VerticalAlignment="Center"
+                                                        Cursor="Help"
+                                                        ToolTipService.InitialShowDelay="120"
+                                                        ToolTipService.ShowDuration="20000"
+                                                        ToolTipService.IsEnabled="True">
+                                                    <Border.ToolTip>
+                                                        <ToolTip Background="{DynamicResource Surface.CardBg}"
+                                                                 Foreground="{DynamicResource MaterialDesignBody}"
+                                                                 BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                                                 BorderThickness="1"
+                                                                 Padding="10,6"
+                                                                 HasDropShadow="True">
+                                                            <StackPanel MaxWidth="320">
+                                                                <TextBlock Text="{Binding Ip}"
+                                                                           FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
+                                                                           FontWeight="SemiBold"
+                                                                           FontSize="12" />
+                                                                <TextBlock FontSize="11" Opacity="0.85" Margin="0,2,0,0"
+                                                                           Text="{Binding Status, Converter={StaticResource IpStatusText}, StringFormat='Status: {0}'}" />
+                                                                <TextBlock FontSize="11" Opacity="0.85" Margin="0,2,0,0"
+                                                                           Text="{Binding LatencyMs, Converter={StaticResource MsConverter}, StringFormat='Latency: {0}'}" />
+                                                                <TextBlock FontSize="11" Opacity="0.85" Margin="0,2,0,0"
+                                                                           TextWrapping="Wrap"
+                                                                           Text="{Binding Message, FallbackValue='', TargetNullValue=''}" />
+                                                            </StackPanel>
+                                                        </ToolTip>
+                                                    </Border.ToolTip>
+                                                    <materialDesign:PackIcon Kind="InformationOutline"
+                                                                             Width="14" Height="14"
+                                                                             HorizontalAlignment="Center"
+                                                                             VerticalAlignment="Center"
+                                                                             Foreground="{DynamicResource MaterialDesignBody}"
+                                                                             Opacity="0.75" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
-                            <TextBox Margin="0,6,0,0"
-                                     Text="{Binding SniHost, UpdateSourceTrigger=PropertyChanged}"
-                                     materialDesign:HintAssist.Hint="custom SNI override" />
-                        </StackPanel>
+                        </DockPanel>
                     </Border>
 
-<DockPanel LastChildFill="True" Margin="0">
-                        <TextBlock DockPanel.Dock="Top" Text="CUSTOM IPS"
-                                   Style="{StaticResource UI.FieldLabel}"
-                                   Margin="14,8,14,4" />
-                        <Button DockPanel.Dock="Bottom"
-                                Style="{StaticResource UI.GhostButton}"
-                                Margin="14,4,14,10"
-                                Padding="10,6"
-                                HorizontalAlignment="Stretch"
-                                Command="{Binding LoadFromFileCommand}"
-                                IsEnabled="{Binding IsRunning, Converter={StaticResource InverseBool}}">
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <materialDesign:PackIcon Kind="FolderOpenOutline" Width="13" Height="13" Margin="0,0,6,0" />
-                                <TextBlock Text="Load from .txt file…" FontSize="11" />
+                    <Border Grid.Column="2" Style="{StaticResource UI.SectionCard}" Padding="0">
+                        <DockPanel LastChildFill="True">
+                            <Grid DockPanel.Dock="Top" Margin="16,14,16,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <materialDesign:PackIcon Kind="CheckDecagram" Width="18" Height="18"
+                                                              Foreground="{StaticResource Brand.SuccessBrush}" />
+                                    <TextBlock Text="Healthy (sorted by latency)" Style="{StaticResource UI.SectionTitle}"
+                                               Margin="8,0,0,0" />
+                                </StackPanel>
+                                <Border Grid.Column="1" Style="{StaticResource UI.StatusBadge.Good}">
+                                    <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#10B981"
+                                               Text="{Binding Healthy.Count, StringFormat='{}{0:N0} alive'}" />
+                                </Border>
+                            </Grid>
+
+                            <StackPanel DockPanel.Dock="Bottom" Margin="14,0,14,10" Orientation="Horizontal">
+                                <Button Style="{StaticResource UI.GhostButton}" Padding="10,6"
+                                        Command="{Binding CopyHealthyNewlineCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="ContentCopy" Width="13" Height="13" Margin="0,0,6,0" />
+                                        <TextBlock Text="Copy" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource UI.GhostButton}" Margin="6,0,0,0" Padding="10,6"
+                                        Command="{Binding CopyHealthyCsvCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="FileDocumentMultipleOutline" Width="13" Height="13" Margin="0,0,6,0" />
+                                        <TextBlock Text="Copy CSV" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource UI.GhostButton}" Margin="6,0,0,0" Padding="10,6"
+                                        Command="{Binding ExportHealthyCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="FloppyVariant" Width="13" Height="13" Margin="0,0,6,0" />
+                                        <TextBlock Text="Export…" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource UI.SuccessButton}" Margin="6,0,0,0" Padding="14,6"
+                                        HorizontalAlignment="Right"
+                                        Command="{Binding ApplyToCdnFrontingCommand}"
+                                        ToolTip="Apply healthy IPs to CDN Fronting and switch the active protocol">
+                                    <StackPanel Orientation="Horizontal">
+                                        <materialDesign:PackIcon Kind="ArrowTopRightBoldOutline" Width="14" Height="14" Margin="0,0,6,0" />
+                                        <TextBlock Text="Apply to CDN" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
-                        </Button>
-                        <TextBox Text="{Binding CustomInput, UpdateSourceTrigger=PropertyChanged}"
-                                 AcceptsReturn="True"
-                                 TextWrapping="NoWrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 Margin="14,0,14,6"
-                                 FontFamily="Cascadia Mono, Consolas, Courier New, monospace"
-                                 FontSize="12"
-                                 materialDesign:HintAssist.Hint="1.2.3.4  ·  10.0.0.0/24  ·  1.2.3.0-100" />
-                    </DockPanel>
-                </DockPanel>
-            </Border>
 
-<Border Grid.Column="2" Style="{StaticResource UI.SectionCard}" Padding="0">
-                <DockPanel LastChildFill="True">
-                    <Grid DockPanel.Dock="Top" Margin="16,14,16,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <materialDesign:PackIcon Kind="MagnifyScan" Width="18" Height="18"
-                                                      Foreground="{StaticResource Brand.AccentBrush}" />
-                            <TextBlock Text="Queue / Failed" Style="{StaticResource UI.SectionTitle}"
-                                       Margin="8,0,0,0" />
-                        </StackPanel>
-                        <Border Grid.Column="1" Style="{StaticResource UI.StatusBadge.Info}">
-                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#06B6D4"
-                                       Text="{Binding Candidates.Count, StringFormat='{}{0} items'}" />
-                        </Border>
-                    </Grid>
-
-                    <DataGrid ItemsSource="{Binding Candidates}"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              CanUserReorderColumns="False"
-                              CanUserResizeRows="False"
-                              EnableRowVirtualization="True"
-                              EnableColumnVirtualization="True"
-                              HeadersVisibility="Column"
-                              GridLinesVisibility="None"
-                              Background="Transparent"
-                              BorderThickness="0"
-                              Margin="8,0,8,8"
-                              RowBackground="Transparent"
-                              AlternatingRowBackground="{DynamicResource Surface.SubtleBg}"
-                              RowHeight="28"
-                              IsReadOnly="True"
-                              SelectionMode="Extended"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled"
-                              ScrollViewer.CanContentScroll="True"
-                              ScrollViewer.IsDeferredScrollingEnabled="True"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                              VirtualizingPanel.ScrollUnit="Pixel"
-                              FontFamily="{StaticResource UI.FontFamily}"
-                              FontSize="12">
-                        <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="" Width="22">
-                                <DataGridTemplateColumn.CellTemplate>
+                            <ListBox ItemsSource="{Binding Healthy}"
+                                     Background="Transparent"
+                                     BorderThickness="0"
+                                     Margin="10,0,10,6"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.CanContentScroll="True"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling"
+                                     VirtualizingPanel.ScrollUnit="Pixel">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,2,0,2" />
+                                        <Setter Property="Background" Value="Transparent" />
+                                        <Setter Property="BorderThickness" Value="0" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter />
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                                                 HorizontalAlignment="Center"
-                                                 Fill="{Binding Status, Converter={StaticResource IpStatusBrush}}" />
+                                        <Border CornerRadius="8"
+                                                Background="{Binding LatencyMs, Converter={StaticResource LatencySoftBrush}}"
+                                                BorderBrush="{Binding LatencyMs, Converter={StaticResource LatencyBrush}}"
+                                                BorderThickness="1"
+                                                Padding="10,6">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Grid.Column="0"
+                                                        Width="8" Height="8" CornerRadius="4"
+                                                        Background="{Binding LatencyMs, Converter={StaticResource LatencyBrush}}"
+                                                        VerticalAlignment="Center"
+                                                        Margin="0,0,10,0" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Ip}"
+                                                           FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
+                                                           FontSize="13"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="None" />
+                                                <Border Grid.Column="2"
+                                                        CornerRadius="6"
+                                                        Background="{Binding LatencyMs, Converter={StaticResource LatencyBrush}}"
+                                                        Padding="8,2"
+                                                        Margin="6,0,8,0"
+                                                        VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding LatencyMs, Converter={StaticResource MsConverter}}"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
+                                                               Foreground="White" />
+                                                </Border>
+                                                <Border Grid.Column="3"
+                                                        Width="26" Height="26" CornerRadius="13"
+                                                        Background="Transparent"
+                                                        BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                                        BorderThickness="1"
+                                                        VerticalAlignment="Center"
+                                                        Margin="0,0,6,0"
+                                                        Cursor="Help"
+                                                        ToolTipService.InitialShowDelay="120"
+                                                        ToolTipService.ShowDuration="20000">
+                                                    <Border.ToolTip>
+                                                        <ToolTip Background="{DynamicResource Surface.CardBg}"
+                                                                 Foreground="{DynamicResource MaterialDesignBody}"
+                                                                 BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                                                 BorderThickness="1"
+                                                                 Padding="10,6"
+                                                                 HasDropShadow="True">
+                                                            <StackPanel MaxWidth="320">
+                                                                <TextBlock Text="{Binding Ip}"
+                                                                           FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
+                                                                           FontWeight="SemiBold"
+                                                                           FontSize="12" />
+                                                                <TextBlock FontSize="11" Opacity="0.85" Margin="0,2,0,0"
+                                                                           Text="{Binding LatencyMs, Converter={StaticResource MsConverter}, StringFormat='Ping: {0}'}" />
+                                                                <TextBlock FontSize="11" Opacity="0.85" Margin="0,2,0,0"
+                                                                           Text="{Binding Ttl, Converter={StaticResource IntConverter}, StringFormat='TTL: {0}'}" />
+                                                                <TextBlock FontSize="11" Opacity="0.85" Margin="0,2,0,0"
+                                                                           TextWrapping="Wrap"
+                                                                           Text="{Binding Message, FallbackValue='', TargetNullValue=''}" />
+                                                            </StackPanel>
+                                                        </ToolTip>
+                                                    </Border.ToolTip>
+                                                    <materialDesign:PackIcon Kind="InformationOutline"
+                                                                             Width="14" Height="14"
+                                                                             HorizontalAlignment="Center"
+                                                                             VerticalAlignment="Center"
+                                                                             Foreground="{DynamicResource MaterialDesignBody}"
+                                                                             Opacity="0.85" />
+                                                </Border>
+                                                <Button Grid.Column="4"
+                                                        Width="26" Height="26"
+                                                        MinHeight="26" MinWidth="26"
+                                                        Padding="0"
+                                                        VerticalAlignment="Center"
+                                                        Background="Transparent"
+                                                        BorderBrush="{DynamicResource Surface.SubtleBorder}"
+                                                        BorderThickness="1"
+                                                        Cursor="Hand"
+                                                        ToolTip="Copy IP"
+                                                        Command="{Binding DataContext.CopyIpCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                        CommandParameter="{Binding}">
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="Bd"
+                                                                    CornerRadius="13"
+                                                                    Background="{TemplateBinding Background}"
+                                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Surface.HoverBg}" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                    <materialDesign:PackIcon Kind="ContentCopy"
+                                                                             Width="13" Height="13"
+                                                                             Foreground="{DynamicResource MaterialDesignBody}"
+                                                                             Opacity="0.85" />
+                                                </Button>
+                                            </Grid>
+                                        </Border>
                                     </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-
-                            <DataGridTemplateColumn Header="IP" Width="*" MinWidth="150">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Ip}"
-                                                   FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
-                                                   FontSize="13"
-                                                   VerticalAlignment="Center"
-                                                   Padding="4,0,0,0"
-                                                   TextTrimming="None" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Latency"
-                                                Binding="{Binding LatencyMs, Converter={StaticResource MsConverter}}"
-                                                Width="96"
-                                                ElementStyle="{StaticResource UI.DataGridCellRight}" />
-
-                            <DataGridTemplateColumn Header="Detail" Width="*" MinWidth="120">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Message}"
-                                                   FontFamily="{StaticResource UI.FontFamily}"
-                                                   FontSize="11"
-                                                   Opacity="0.85"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   VerticalAlignment="Center"
-                                                   ToolTip="{Binding Message}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
-            </Border>
-
-<Border Grid.Column="4" Style="{StaticResource UI.SectionCard}" Padding="0">
-                <DockPanel LastChildFill="True">
-                    <Grid DockPanel.Dock="Top" Margin="16,14,16,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                            <materialDesign:PackIcon Kind="CheckDecagram" Width="18" Height="18"
-                                                      Foreground="{StaticResource Brand.SuccessBrush}" />
-                            <TextBlock Text="Healthy (sorted by latency)" Style="{StaticResource UI.SectionTitle}"
-                                       Margin="8,0,0,0" />
-                        </StackPanel>
-                        <Border Grid.Column="1" Style="{StaticResource UI.StatusBadge.Good}">
-                            <TextBlock Style="{StaticResource UI.StatusBadge.Text}" Foreground="#10B981"
-                                       Text="{Binding Healthy.Count, StringFormat='{}{0} alive'}" />
-                        </Border>
-                    </Grid>
-
-                    <DataGrid ItemsSource="{Binding Healthy}"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              CanUserReorderColumns="False"
-                              CanUserResizeRows="False"
-                              EnableRowVirtualization="True"
-                              EnableColumnVirtualization="True"
-                              HeadersVisibility="Column"
-                              GridLinesVisibility="None"
-                              Background="Transparent"
-                              BorderThickness="0"
-                              Margin="8,0,8,8"
-                              RowBackground="Transparent"
-                              AlternatingRowBackground="{DynamicResource Surface.SubtleBg}"
-                              RowHeight="28"
-                              IsReadOnly="True"
-                              SelectionMode="Extended"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled"
-                              ScrollViewer.CanContentScroll="True"
-                              ScrollViewer.IsDeferredScrollingEnabled="True"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                              VirtualizingPanel.ScrollUnit="Pixel"
-                              FontFamily="{StaticResource UI.FontFamily}"
-                              FontSize="12">
-                        <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="" Width="22">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                                                 HorizontalAlignment="Center"
-                                                 Fill="{StaticResource Brand.SuccessBrush}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-
-                            <DataGridTemplateColumn Header="IP" Width="*" MinWidth="150">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Ip}"
-                                                   FontFamily="Consolas, Cascadia Mono, Courier New, monospace"
-                                                   FontSize="13"
-                                                   VerticalAlignment="Center"
-                                                   Padding="4,0,0,0"
-                                                   TextTrimming="None" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Latency"
-                                                Binding="{Binding LatencyMs, Converter={StaticResource MsConverter}}"
-                                                Width="96"
-                                                ElementStyle="{StaticResource UI.DataGridCellRight}" />
-                            <DataGridTemplateColumn Header="Detail" Width="*" MinWidth="120">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding Message}"
-                                                   FontFamily="{StaticResource UI.FontFamily}"
-                                                   FontSize="11"
-                                                   Opacity="0.85"
-                                                   TextTrimming="CharacterEllipsis"
-                                                   VerticalAlignment="Center"
-                                                   ToolTip="{Binding Message}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
-            </Border>
-        </Grid>
-
-<Grid Grid.Row="5" Margin="0,10,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <Button Grid.Column="0" Style="{StaticResource UI.GhostButton}" Margin="0,0,8,0"
-                    Command="{Binding CopyHealthyNewlineCommand}">
-                <StackPanel Orientation="Horizontal">
-                    <materialDesign:PackIcon Kind="ContentCopy" Width="14" Height="14" Margin="0,0,6,0" />
-                    <TextBlock Text="Copy IPs (newline)" />
-                </StackPanel>
-            </Button>
-            <Button Grid.Column="1" Style="{StaticResource UI.GhostButton}" Margin="0,0,8,0"
-                    Command="{Binding CopyHealthyCsvCommand}">
-                <StackPanel Orientation="Horizontal">
-                    <materialDesign:PackIcon Kind="TableLarge" Width="14" Height="14" Margin="0,0,6,0" />
-                    <TextBlock Text="Copy as CSV" />
-                </StackPanel>
-            </Button>
-            <Button Grid.Column="2" Style="{StaticResource UI.GhostButton}"
-                    Command="{Binding ExportHealthyCommand}">
-                <StackPanel Orientation="Horizontal">
-                    <materialDesign:PackIcon Kind="ContentSaveOutline" Width="14" Height="14" Margin="0,0,6,0" />
-                    <TextBlock Text="Save to file…" />
-                </StackPanel>
-            </Button>
-            <Button Grid.Column="4" Style="{StaticResource UI.SuccessButton}"
-                    Command="{Binding ApplyToCdnFrontingCommand}">
-                <StackPanel Orientation="Horizontal">
-                    <materialDesign:PackIcon Kind="ArrowTopRightBoldOutline" Width="14" Height="14" Margin="0,0,6,0" />
-                    <TextBlock Text="Apply to CDN Fronting…" />
-                </StackPanel>
-            </Button>
-        </Grid>
-    </Grid>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+    </materialDesign:DialogHost>
 </UserControl>

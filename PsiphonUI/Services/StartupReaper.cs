@@ -14,13 +14,13 @@ public sealed class StartupReaper : IStartupReaper
     public void ReapStaleProcesses()
     {
 
-        var tunnelCoreRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Psiphon",
-            "tunnel-core");
-        var xrayRoot = Path.Combine(Path.GetTempPath(), "Psiphon");
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var tunnelCoreRoot = Path.Combine(localAppData, "Psiphon", "tunnel-core");
+        var singBoxRoot = Path.Combine(localAppData, "Psiphon", "singbox-tun");
+        var xrayRootLegacy1 = Path.Combine(localAppData, "Psiphon", "xray-tun");
+        var xrayRootLegacy2 = Path.Combine(Path.GetTempPath(), "Psiphon");
 
-        var roots = new[] { tunnelCoreRoot, xrayRoot };
+        var roots = new[] { tunnelCoreRoot, singBoxRoot, xrayRootLegacy1, xrayRootLegacy2 };
 
         Process[] processes;
         try

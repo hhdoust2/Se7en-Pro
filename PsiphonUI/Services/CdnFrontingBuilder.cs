@@ -37,39 +37,52 @@ public static class CdnFrontingBuilder
     };
 
     public static JsonArray BuildDialOverrides(string? customIpList, string? customSni)
+        => BuildDialOverrides(customIpList, customSni, includeBuiltInDefaults: true);
+
+    public static JsonArray BuildDialOverrides(
+        string? customIpList,
+        string? customSni,
+        bool includeBuiltInDefaults)
     {
         var overrides = new JsonArray();
         var edgeDialAddresses = new HashSet<string>(StringComparer.Ordinal);
-        var edgeSni = NormalizeCdnFrontingCustomSni(customSni);
+        var snis = ParseCdnFrontingCustomSnis(customSni);
+        var primarySni = snis.Count > 0 ? snis[0] : "";
 
-        overrides.Add(MakeOverride(
-            overrideId: "fastly-provider",
-            matchFrontingProviderIdRegexes: new[] { "(?i)fastly" },
-            matchDialAddressRegexes: null,
-            dialAddress: "pypi.org",
-            sniServerName: "pypi.org",
-            verifyServerNames: FastlyVerifyServerNames,
-            alpnProtocols: new[] { "h2", "http/1.1" }));
-
-        overrides.Add(MakeOverride(
-            overrideId: "fastly-address",
-            matchFrontingProviderIdRegexes: null,
-            matchDialAddressRegexes: new[] { "(?i)(fastly|pypi|python|github)" },
-            dialAddress: "pypi.org",
-            sniServerName: "pypi.org",
-            verifyServerNames: FastlyVerifyServerNames,
-            alpnProtocols: new[] { "h2", "http/1.1" }));
-
-        var customIndex = 1;
-        foreach (var ip in ParseCdnFrontingCustomIpList(customIpList))
+        if (includeBuiltInDefaults)
         {
-            PutEdgeOverride(overrides, edgeDialAddresses, $"edge-custom-{customIndex}", ip, edgeSni);
-            customIndex++;
+            overrides.Add(MakeOverride(
+                overrideId: "fastly-provider",
+                matchFrontingProviderIdRegexes: new[] { "(?i)fastly" },
+                matchDialAddressRegexes: null,
+                dialAddress: "pypi.org",
+                sniServerName: "pypi.org",
+                verifyServerNames: FastlyVerifyServerNames,
+                alpnProtocols: new[] { "h2", "http/1.1" }));
+
+            overrides.Add(MakeOverride(
+                overrideId: "fastly-address",
+                matchFrontingProviderIdRegexes: null,
+                matchDialAddressRegexes: new[] { "(?i)(fastly|pypi|python|github)" },
+                dialAddress: "pypi.org",
+                sniServerName: "pypi.org",
+                verifyServerNames: FastlyVerifyServerNames,
+                alpnProtocols: new[] { "h2", "http/1.1" }));
         }
 
-        foreach (var (id, ip) in DefaultEdgeIps)
+        var customIps = ParseCdnFrontingCustomIpList(customIpList);
+        for (var i = 0; i < customIps.Count; i++)
         {
-            PutEdgeOverride(overrides, edgeDialAddresses, id, ip, edgeSni);
+            var sniForIp = snis.Count > 0 ? snis[i % snis.Count] : "";
+            PutEdgeOverride(overrides, edgeDialAddresses, $"edge-custom-{i + 1}", customIps[i], sniForIp);
+        }
+
+        if (includeBuiltInDefaults)
+        {
+            foreach (var (id, ip) in DefaultEdgeIps)
+            {
+                PutEdgeOverride(overrides, edgeDialAddresses, id, ip, primarySni);
+            }
         }
 
         return overrides;
@@ -95,9 +108,26 @@ public static class CdnFrontingBuilder
 
     public static string NormalizeCdnFrontingCustomSni(string? customSni)
     {
-        if (string.IsNullOrEmpty(customSni)) return "";
-        var sni = customSni.Trim();
-        return IsValidHostname(sni) ? sni : "";
+        var list = ParseCdnFrontingCustomSnis(customSni);
+        return list.Count > 0 ? list[0] : "";
+    }
+
+    public static List<string> ParseCdnFrontingCustomSnis(string? customSni)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrEmpty(customSni)) return result;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in customSni.Split(
+                     new[] { ' ', '\t', '\r', '\n', ',', ';' },
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            var host = entry.Trim();
+            if (host.Length == 0 || !IsValidHostname(host)) continue;
+            if (!seen.Add(host)) continue;
+            result.Add(host);
+        }
+        return result;
     }
 
     public static bool IsValidIPv4(string ip)

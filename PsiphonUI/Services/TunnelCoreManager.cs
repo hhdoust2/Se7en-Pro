@@ -48,6 +48,9 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
 
     public string ConnectedServerRegion { get; private set; } = "";
 
+    public string CurrentRouteIp { get; private set; } = "";
+    public string CurrentRouteSni { get; private set; } = "";
+
     public long BytesSent { get; private set; }
     public long BytesReceived { get; private set; }
 
@@ -67,6 +70,7 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
     public event EventHandler<string>? LogLineAppended;
     public event EventHandler? BytesTransferredChanged;
     public event EventHandler? LogCleared;
+    public event EventHandler? RouteChanged;
 
     public async Task StartAsync()
     {
@@ -80,12 +84,15 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
         }
 
         SetState(ConnectionState.Connecting);
-        AppendLog("[INFO] Starting tunnel...");
+        AppendLog("Starting tunnel...");
 
         BytesSent = 0;
         BytesReceived = 0;
         ConnectedServerRegion = "";
+        CurrentRouteIp = "";
+        CurrentRouteSni = "";
         BytesTransferredChanged?.Invoke(this, EventArgs.Empty);
+        RouteChanged?.Invoke(this, EventArgs.Empty);
 
         try
         {
@@ -137,17 +144,16 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
             _process.BeginErrorReadLine();
 
             _logger.LogInformation("psiphon-tunnel-core started (pid {Pid})", _process.Id);
-            AppendLog($"[INFO] psiphon-tunnel-core started (pid {_process.Id})");
             await Task.CompletedTask;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to start tunnel");
-            AppendLog($"[ERROR] Failed to start: {ex.Message}");
+            AppendLog($"Failed to start: {ex.Message}");
             _process = null;
             if (_userWantsConnection)
             {
-                AppendLog("[INFO] Auto-retrying in a few seconds...");
+                AppendLog("Auto-retrying in a few seconds...");
                 SetState(ConnectionState.Connecting);
                 ScheduleAutoRestart(TimeSpan.FromSeconds(5));
             }
@@ -184,7 +190,7 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
         }
 
         SetState(ConnectionState.Disconnecting);
-        AppendLog("[INFO] Stopping tunnel...");
+        AppendLog("Stopping tunnel...");
 
         try
         {
@@ -209,16 +215,19 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
             }
 
             ConnectedServerRegion = "";
+            CurrentRouteIp = "";
+            CurrentRouteSni = "";
             BytesSent = 0;
             BytesReceived = 0;
             BytesTransferredChanged?.Invoke(this, EventArgs.Empty);
+            RouteChanged?.Invoke(this, EventArgs.Empty);
 
             SetState(ConnectionState.Disconnected);
 
             lock (_stateLock) _recentLog.Clear();
             LogCleared?.Invoke(this, EventArgs.Empty);
 
-            AppendLog("[INFO] Tunnel stopped");
+            AppendLog("Stopped tunnel");
         }
     }
 
@@ -240,7 +249,6 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
     {
         var exitCode = _process?.ExitCode ?? -1;
         _logger.LogInformation("psiphon-tunnel-core exited with code {Code}", exitCode);
-        AppendLog($"[INFO] Process exited (code {exitCode})");
 
         _process = null;
 
@@ -251,7 +259,7 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
 
         if (_userWantsConnection)
         {
-            AppendLog("[INFO] tunnel-core exited unexpectedly; auto-restarting...");
+            AppendLog("tunnel-core exited unexpectedly; auto-restarting...");
             SetState(ConnectionState.Connecting);
             ScheduleAutoRestart(TimeSpan.FromSeconds(3));
         }
@@ -298,11 +306,6 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
         try { cts.Dispose(); } catch {  }
     }
 
-    private static readonly HashSet<string> NoisyNoticeTypes = new(StringComparer.Ordinal)
-    {
-        "BytesTransferred",
-    };
-
     private void OnLineReceived(string? line, bool stderr)
     {
         if (string.IsNullOrWhiteSpace(line)) return;
@@ -314,10 +317,10 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
             {
                 HandleNotice(notice);
                 NoticeReceived?.Invoke(this, notice);
-                if (!NoisyNoticeTypes.Contains(notice.NoticeType))
+                var pretty = LogSanitizer.FormatNotice(notice.NoticeType, notice.Data);
+                if (!string.IsNullOrEmpty(pretty))
                 {
-
-                    AppendLog(LogSanitizer.FormatNotice(notice.NoticeType, notice.Data));
+                    AppendLog(pretty!);
                 }
                 return;
             }
@@ -327,7 +330,10 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
 
         }
 
-        AppendLog(LogSanitizer.Scrub((stderr ? "[stderr] " : "") + line));
+        if (stderr)
+        {
+            AppendLog(LogSanitizer.Scrub(line));
+        }
     }
 
     private void HandleNotice(Notice notice)
@@ -418,7 +424,140 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
                     }
                     break;
                 }
+
+            case "ActiveTunnel":
+                if (notice.Data.TryGetProperty("dialAddress", out var da) && da.ValueKind == JsonValueKind.String)
+                {
+                    var dialAddr = UnescapeRouteToken(da.GetString() ?? "");
+                    var protocol = notice.Data.TryGetProperty("protocol", out var proto) && proto.ValueKind == JsonValueKind.String
+                        ? proto.GetString() : "";
+                    var ipChanged = false;
+                    var sniChanged = false;
+                    if (dialAddr.Length > 0)
+                    {
+                        AppendLog($"Route: {dialAddr} via {protocol}");
+                        var newIp = ExtractIpFromDialAddress(dialAddr);
+                        if (!string.IsNullOrEmpty(newIp) && newIp != CurrentRouteIp)
+                        {
+                            CurrentRouteIp = newIp;
+                            ipChanged = true;
+                        }
+                    }
+                    if (notice.Data.TryGetProperty("meekSNIServerName", out var ms) && ms.ValueKind == JsonValueKind.String)
+                    {
+                        var sni = UnescapeRouteToken(ms.GetString() ?? "");
+                        if (sni != CurrentRouteSni)
+                        {
+                            CurrentRouteSni = sni;
+                            sniChanged = true;
+                        }
+                    }
+                    if (ipChanged || sniChanged)
+                    {
+                        MaybePersistFoundRoute();
+                        RouteChanged?.Invoke(this, EventArgs.Empty);
+                    }
+                }
+                break;
+
+            case "Info":
+                if (notice.Data.TryGetProperty("message", out var im) && im.ValueKind == JsonValueKind.String)
+                {
+                    var msg = im.GetString() ?? "";
+                    var (foundIp, foundSni) = TryParseCdnScanFound(msg);
+                    if (!string.IsNullOrEmpty(foundIp))
+                    {
+                        var anyChange = false;
+                        if (foundIp != CurrentRouteIp)
+                        {
+                            CurrentRouteIp = foundIp;
+                            anyChange = true;
+                        }
+                        if (!string.IsNullOrEmpty(foundSni) && foundSni != CurrentRouteSni)
+                        {
+                            CurrentRouteSni = foundSni!;
+                            anyChange = true;
+                        }
+                        if (anyChange)
+                        {
+                            MaybePersistFoundRoute();
+                            RouteChanged?.Invoke(this, EventArgs.Empty);
+                        }
+                    }
+                }
+                break;
         }
+    }
+
+    private static string ExtractIpFromDialAddress(string dialAddress)
+    {
+        var hostPart = dialAddress;
+        var colonIdx = dialAddress.LastIndexOf(':');
+        if (colonIdx > 0) hostPart = dialAddress[..colonIdx];
+        return hostPart.Trim('[', ']');
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex CdnScanFoundRegex =
+        new(@"cdn fronting scan found \(ip:\s*([^\s,)]+),\s*sni:\s*([^\s,)]+)\)",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static (string Ip, string Sni) TryParseCdnScanFound(string msg)
+    {
+        var m = CdnScanFoundRegex.Match(msg);
+        if (!m.Success) return ("", "");
+        return (UnescapeRouteToken(m.Groups[1].Value), UnescapeRouteToken(m.Groups[2].Value));
+    }
+
+    private static string UnescapeRouteToken(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return value.Replace("\\", "");
+    }
+
+    private void MaybePersistFoundRoute()
+    {
+        var settings = _settings.Settings;
+        if (!settings.SaveFoundIpsAndSni) return;
+        if (string.IsNullOrEmpty(CurrentRouteIp) && string.IsNullOrEmpty(CurrentRouteSni)) return;
+
+        var changed = false;
+        if (!string.IsNullOrEmpty(CurrentRouteIp))
+        {
+            var newList = AppendUniqueLine(settings.CdnFrontingCustomIpList, CurrentRouteIp);
+            if (newList != settings.CdnFrontingCustomIpList)
+            {
+                settings.CdnFrontingCustomIpList = newList;
+                changed = true;
+            }
+        }
+        if (!string.IsNullOrEmpty(CurrentRouteSni))
+        {
+            var newSnis = AppendUniqueLine(settings.CdnFrontingCustomSni, CurrentRouteSni);
+            if (newSnis != settings.CdnFrontingCustomSni)
+            {
+                settings.CdnFrontingCustomSni = newSnis;
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            _settings.Save();
+            AppendLog($"Saved route: ip={CurrentRouteIp} sni={CurrentRouteSni}");
+        }
+    }
+
+    private static string AppendUniqueLine(string current, string value)
+    {
+        var trimmed = value.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return current;
+        var lines = (current ?? "").Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var ln in lines)
+        {
+            if (string.Equals(ln.Trim(), trimmed, StringComparison.OrdinalIgnoreCase))
+                return current ?? "";
+        }
+        var existing = (current ?? "").TrimEnd('\r', '\n');
+        return existing.Length == 0 ? trimmed : existing + Environment.NewLine + trimmed;
     }
 
     private string BuildConfigJson()
@@ -449,6 +588,8 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
             ["FeedbackEncryptionPublicKey"] = EmbeddedValues.FeedbackEncryptionPublicKey,
             ["EnableFeedbackUpload"] = true,
 
+            ["EstablishTunnelTimeoutSeconds"] = 0,
+
             ["LocalHttpProxyPort"] = SanitizeListenPort(s.LocalHttpProxyPort),
             ["LocalSocksProxyPort"] = SanitizeListenPort(s.LocalSocksProxyPort),
         };
@@ -456,6 +597,13 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
         if (s.AllowLanConnections)
         {
             cfg["ListenInterface"] = "any";
+
+            if (!string.IsNullOrEmpty(s.LanProxyUsername) &&
+                !string.IsNullOrEmpty(s.LanProxyPassword))
+            {
+                cfg["LocalProxyUsername"] = s.LanProxyUsername;
+                cfg["LocalProxyPassword"] = s.LanProxyPassword;
+            }
         }
 
         if (!string.IsNullOrEmpty(s.EgressRegion))
@@ -468,9 +616,15 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
             cfg["NetworkLatencyMultiplierLambda"] = 0.1;
         }
 
-        cfg["UpstreamProxyUrl"] = string.IsNullOrWhiteSpace(s.UpstreamProxy)
+        var upstreamProxyUrl = string.IsNullOrWhiteSpace(s.UpstreamProxy)
             ? GetSystemHttpProxy()
             : NormalizeProxyUrl(s.UpstreamProxy);
+        cfg["UpstreamProxyUrl"] = upstreamProxyUrl;
+
+        if (!string.IsNullOrEmpty(upstreamProxyUrl))
+        {
+            AppendLog($"Using upstream proxy: {LogSanitizer.Scrub(upstreamProxyUrl)}");
+        }
 
         ApplyAdvancedTunnelConfig(cfg, s);
 
@@ -488,17 +642,37 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
         {
             case "cdn_fronting":
 
-                cfg["LimitTunnelProtocols"] = new JsonArray("FRONTED-MEEK-CDN-OSSH");
+                cfg["LimitTunnelProtocols"] = new JsonArray(
+                    "FRONTED-MEEK-CDN-OSSH",
+                    "FRONTED-MEEK-CDN-HTTP-OSSH",
+                    "FRONTED-MEEK-CDN-QUIC-OSSH");
                 cfg["DisableTactics"] = true;
+
+                var hasUserIpList = !string.IsNullOrWhiteSpace(s.CdnFrontingCustomIpList);
+                var includeBuiltInDefaults = s.AutoFindIpAndSni || !hasUserIpList;
+
                 cfg["FrontedMeekDialOverrides"] = CdnFrontingBuilder.BuildDialOverrides(
-                    s.CdnFrontingCustomIpList, s.CdnFrontingCustomSni);
+                    s.CdnFrontingCustomIpList,
+                    s.CdnFrontingCustomSni,
+                    includeBuiltInDefaults);
                 cfg["FrontedMeekDialOverridesProbability"] = 1.0;
+                cfg["FrontedMeekCDNScanUseBuiltInSpec"] = s.AutoFindIpAndSni;
                 break;
 
             case "direct":
 
                 cfg["LimitTunnelProtocols"] = new JsonArray(
-                    "SSH", "OSSH", "TLS-OSSH", "QUIC-OSSH", "SHADOWSOCKS-OSSH");
+                    "SSH", "OSSH", "TLS-OSSH",
+                    "UNFRONTED-MEEK-OSSH",
+                    "UNFRONTED-MEEK-HTTPS-OSSH",
+                    "UNFRONTED-MEEK-SESSION-TICKET-OSSH",
+                    "QUIC-OSSH", "SHADOWSOCKS-OSSH",
+                    "FRONTED-MEEK-OSSH",
+                    "FRONTED-MEEK-CDN-OSSH",
+                    "FRONTED-MEEK-HTTP-OSSH",
+                    "FRONTED-MEEK-CDN-HTTP-OSSH",
+                    "FRONTED-MEEK-QUIC-OSSH",
+                    "FRONTED-MEEK-CDN-QUIC-OSSH");
                 cfg["DisableTactics"] = true;
                 break;
 
@@ -508,6 +682,8 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
                 break;
         }
     }
+
+    private const string CachedTunnelExeName = "PsiphonUI.Tunnel.exe";
 
     private string ResolveTunnelCoreExe()
     {
@@ -527,31 +703,52 @@ public sealed class TunnelCoreManager : ITunnelCoreManager, IDisposable
             }
         }
 
-        var randomName = Path.GetRandomFileName().Replace(".", "") + ".exe";
-        var copyTo = Path.Combine(_workDir!, randomName);
+        var copyTo = Path.Combine(_workDir!, CachedTunnelExeName);
 
         foreach (var stale in Directory.EnumerateFiles(_workDir!, "*.exe"))
         {
+            if (string.Equals(Path.GetFileName(stale), CachedTunnelExeName,
+                              StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             try { File.Delete(stale); } catch {  }
         }
 
-        File.Copy(bundled, copyTo, overwrite: true);
+        if (!FileCacheHelper.IsCachedCopyUpToDate(bundled, copyTo))
+        {
+            try
+            {
+                File.Copy(bundled, copyTo, overwrite: true);
+            }
+            catch (IOException)
+            {
+
+                if (!File.Exists(copyTo))
+                {
+                    throw;
+                }
+            }
+        }
+
         return copyTo;
     }
 
     private string? WriteEmbeddedServerList()
     {
-        var appDir = AppContext.BaseDirectory;
-        var bundled = Path.Combine(appDir, "Resources", "server_entries.txt");
-        if (!File.Exists(bundled))
+        try
         {
-            _logger.LogWarning("Embedded server_entries.txt not found; tunnel-core will rely on remote server list fetch");
+            var plain = SecretStore.DecryptResource("PsiphonUI.Resources.server_entries.bin");
+            var dest = Path.Combine(_workDir!, "server_entries.txt");
+            File.WriteAllBytes(dest, plain);
+            Array.Clear(plain, 0, plain.Length);
+            return dest;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Embedded server list unavailable; tunnel-core will rely on remote server list fetch");
             return null;
         }
-
-        var dest = Path.Combine(_workDir!, "server_entries.txt");
-        File.Copy(bundled, dest, overwrite: true);
-        return dest;
     }
 
     private static int SanitizeListenPort(int port)

@@ -66,4 +66,16 @@ public sealed class UserSettings
 
     [JsonPropertyName("cdnFrontingCustomSni")]
     public string CdnFrontingCustomSni { get; set; } = "";
+
+    [JsonPropertyName("autoFindIpAndSni")]
+    public bool AutoFindIpAndSni { get; set; }
+
+    [JsonPropertyName("saveFoundIpsAndSni")]
+    public bool SaveFoundIpsAndSni { get; set; } = false;
+
+    [JsonPropertyName("lanProxyUsername")]
+    public string LanProxyUsername { get; set; } = "";
+
+    [JsonPropertyName("lanProxyPassword")]
+    public string LanProxyPassword { get; set; } = "";
 }

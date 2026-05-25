@@ -56,6 +56,18 @@
                             Content="Privacy policy"
                             HorizontalAlignment="Left"
                             Command="{Binding OpenPrivacyCommand}" />
+                    <Button Style="{StaticResource MaterialDesignFlatButton}"
+                            HorizontalAlignment="Left"
+                            Command="{Binding OpenGitHubCommand}"
+                            ToolTip="https://github.com/KNG7-P/Se7en-Pro">
+                        <StackPanel Orientation="Horizontal">
+                            <materialDesign:PackIcon Kind="Github" Width="18" Height="18"
+                                                      VerticalAlignment="Center" />
+                            <TextBlock Text="GitHub repository"
+                                       Margin="8,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Border>
         </StackPanel>
